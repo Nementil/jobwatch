@@ -81,20 +81,28 @@ class TestResultsAlignment:
     def test_every_job_gets_a_row(self, populated):
         assert len(populated.tree.get_children()) == 3
 
-    @pytest.mark.parametrize("column,index", [
-        ("company", 0), ("title", 1), ("location", 2), ("source", 3),
-    ])
-    def test_sorting_keeps_rows_and_results_aligned(self, populated, column, index):
+    @pytest.mark.parametrize("column", ["company", "title", "location", "source"])
+    def test_sorting_keeps_rows_and_results_aligned(self, populated, column):
+        """Row order maps a selection back to a Job, so the two must stay in step.
+
+        The column INDEX is derived from the tree rather than parametrised
+        alongside the name, because it was hardcoded here and adding a Status
+        column in front shifted every entry by one. The test then asserted
+        company against title and failed for a reason that had nothing to do
+        with sorting. A test carrying its own copy of the column order breaks
+        whenever the UI gains a column, which is not a defect worth reporting.
+        """
         populated._sort_by(column)
+        index = list(populated.tree["columns"]).index(column)
         for position, item in enumerate(populated.tree.get_children()):
             row_value = str(populated.tree.item(item, "values")[index])
             job = populated.results[position]
             expected = {
-                0: job.company,
-                1: job.title,
-                2: job.location or "-",
-                3: job.source,
-            }[index]
+                "company": job.company,
+                "title": job.title,
+                "location": job.location or "-",
+                "source": job.source,
+            }[column]
             assert row_value == expected
 
     def test_sorting_is_actually_sorted(self, populated):
@@ -118,4 +126,4 @@ class TestEmptyResults:
         gui._show_results([], total_seen=12)
         assert gui.tree.get_children() == ()
         assert "disabled" in gui.mark_btn.state()
-        assert "0" in gui.status.get()
+        assert "0" in gui.status_text.get()

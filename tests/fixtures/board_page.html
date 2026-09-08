@@ -1,0 +1,65 @@
+<!doctype html>
+<!--
+  A stand-in for a client-rendered job board, served over file:// so the
+  browser tests need no network and no third party.
+
+  The cards are BUILT BY SCRIPT rather than written as static markup, which
+  is the entire point. A board that ships its listings in the initial HTML
+  does not need a browser at all: the RSS and ATS adapters handle that case
+  far more cheaply. The only reason BrowserSource exists is boards that
+  render after load, so a fixture with static cards would exercise the
+  selector and skip the thing actually worth testing.
+
+  The 60ms delay is deliberate too. It makes wait_for_listings do real work:
+  against instant markup the wait returns immediately and would pass even if
+  it were removed entirely.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Example Board</title>
+</head>
+<body>
+  <h1>Open roles</h1>
+
+  <!-- Rendered into by the script below. Empty on first paint, exactly as a
+       client-rendered board is. -->
+  <div id="results"></div>
+
+  <script>
+    const listings = [
+      {
+        title: "QA Automation Engineer",
+        company: "Systematic",
+        location: "Aarhus",
+        href: "https://example.dk/jobs/1?utm_source=board&gh_jid=1"
+      },
+      {
+        title: "Softwaretester",
+        company: "cBrain A/S",
+        location: "Copenhagen",
+        href: "https://example.dk/jobs/2"
+      },
+      {
+        // No company element at all. Real boards omit fields, and a row that
+        // cannot yield a Job must be skipped rather than crash the run.
+        title: "Test Consultant",
+        company: null,
+        location: "Ballerup",
+        href: "https://example.dk/jobs/3"
+      }
+    ];
+
+    setTimeout(() => {
+      const root = document.getElementById("results");
+      root.innerHTML = listings.map(job => `
+        <article class="job-card">
+          <a href="${job.href}"><span class="job-title">${job.title}</span></a>
+          ${job.company ? `<div class="company-name">${job.company}</div>` : ""}
+          <div class="location-label">${job.location}</div>
+        </article>
+      `).join("");
+    }, 60);
+  </script>
+</body>
+</html>

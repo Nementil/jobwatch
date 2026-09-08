@@ -11,6 +11,12 @@ from __future__ import annotations
 
 import pytest
 
+#: Deselected by default, matching the project's existing `gui` marker rather
+#: than relying on a runtime skip. A test that is deselected by policy is a
+#: decision; a test that skips because the display happened to be missing is
+#: an accident that reads the same in the output. Opt in with `pytest -m gui`.
+pytestmark = pytest.mark.gui
+
 tkinter = pytest.importorskip("tkinter")
 
 from jobwatch.models import Job  # noqa: E402
