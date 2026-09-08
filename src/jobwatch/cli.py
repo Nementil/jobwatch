@@ -168,13 +168,65 @@ def mark(db_path: str, needle: str, status: str, note: str = "") -> int:
     return 0
 
 
+def add(db_path: str, company: str, title: str, url: str = "",
+        location: str = "", status: str = "applied", note: str = "") -> int:
+    """Record a job the feeds never saw.
+
+    Most of what gets applied to is not found by this tool: a posting someone
+    sends you, a careers page read directly, a board with no feed. Without a
+    way to enter those, the response rate the tracker exists to produce is
+    computed over a biased sample -- only the jobs that happened to arrive
+    through RSS -- which is worse than no number, because it looks like one.
+
+    Defaults to `applied` rather than `new`. Nobody types a job in by hand to
+    put it on a worklist; they type it in because they just sent something.
+    """
+    try:
+        job = Job(title=title, company=company, url=url, source="manual",
+                  location=location)
+    except ValueError as exc:
+        log.error("%s", exc)
+        return 2
+
+    with JobStore(db_path) as store:
+        # A job entered twice is the same job. Update it rather than creating a
+        # second row: two rows for one application would silently inflate the
+        # denominator of the response rate.
+        existed = store.is_seen(job)
+        if not existed:
+            store.mark_seen([job])
+        store.set_status(job.fingerprint, status, note)
+
+    verb = "updated" if existed else "added"
+    where = f" [{job.location}]" if job.location else ""
+    print(f"{verb}: {job.company}: {job.title}{where}")
+    print(f"  status={status}  fingerprint={job.fingerprint[:8]}")
+    if not url:
+        # The fingerprint is company|title|url, so two postings with the same
+        # title at one employer collide when neither carries a URL. Worth
+        # saying once rather than letting the second one silently update the
+        # first.
+        print("  no url given: a second posting with this exact title at this "
+              "employer would update this row rather than add one")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jobwatch", description="Job board monitor.")
-    parser.add_argument("command", choices=["run", "stats", "gui", "mark"])
+    parser.add_argument("command", choices=["run", "stats", "gui", "mark", "add"])
     parser.add_argument("needle", nargs="?", help="mark: text identifying the job")
     parser.add_argument("status", nargs="?", choices=STATUSES,
                         help="mark: the status to move it to")
-    parser.add_argument("--note", default="", help="mark: free text stored with the status")
+    parser.add_argument("--note", default="", help="free text stored with the status")
+    # add: flags rather than more positionals. Four positionals where two are
+    # already optional is a parser nobody can use without reading --help, and
+    # the shape that broke the GUI launcher once already.
+    parser.add_argument("--company", help="add: employer name (required)")
+    parser.add_argument("--title", help="add: job title (required)")
+    parser.add_argument("--url", default="", help="add: link to the posting")
+    parser.add_argument("--location", default="", help="add: where the job is")
+    parser.add_argument("--as", dest="new_status", choices=STATUSES, default="applied",
+                        help="add: status to record (default: applied)")
     parser.add_argument("-c", "--config", default="config.yaml")
     parser.add_argument("--db", default="jobwatch.db")
     parser.add_argument("--dry", action="store_true", help="report without recording")
@@ -188,6 +240,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "stats":
         return stats(args.db)
+
+    if args.command == "add":
+        if not args.company or not args.title:
+            log.error('usage: jobwatch add --company "X" --title "Y" '
+                      '[--url U] [--location L] [--as %s] [--note N]',
+                      "|".join(STATUSES))
+            return 2
+        return add(args.db, args.company, args.title, args.url,
+                   args.location, args.new_status, args.note)
 
     if args.command == "mark":
         if not args.needle or not args.status:

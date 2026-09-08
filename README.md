@@ -18,6 +18,8 @@ python -m jobwatch stats          # status breakdown, response rate, worklist
 
 python -m jobwatch mark Systematic applied --note "sent QA CV"
 python -m jobwatch mark Systematic rejected
+
+python -m jobwatch add --company "Groupe CIS" --title "Support technician"                       --url https://... --location "Saint-Jerome" --as applied
 ```
 
 ## Tracking, not just finding
@@ -26,6 +28,13 @@ A monitor that only tells you what is new leaves you to remember what you did
 about it. Every recorded job carries a status (`new`, `applied`, `rejected`,
 `interview`, `offer`, `skipped`) and `stats` reports the number that actually
 decides where effort goes: how many applications got any answer at all.
+
+`add` records a job the feeds never found, which is most of what actually gets
+applied to: a posting someone forwards you, a careers page read directly, a board
+with no feed. Without it the response rate is computed over only the jobs that
+happened to arrive through RSS, which is a biased sample that still looks like a
+number. It defaults to `applied`, because nobody types a job in by hand to put it
+on a worklist.
 
 A rejection counts as a response. Counting only interviews measures how good
 the applications are and hides the thing worth knowing first, which is whether
