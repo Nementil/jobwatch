@@ -1,0 +1,11 @@
+# Line endings are declared by the repository, not by each clone's config.
+#
+# Without this, behaviour depends on core.autocrlf on whichever machine did
+# the checkout, so a second machine or a CI runner with different settings
+# produces whole-file diffs that are pure noise.
+* text=auto
+
+# Batch files are the one genuine exception. cmd.exe mostly tolerates LF, but
+# not in every construct, and a launcher that fails for a line-ending reason
+# is exactly the kind of invisible failure this project has already had once.
+*.bat text eol=crlf
