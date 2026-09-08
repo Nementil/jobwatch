@@ -14,8 +14,24 @@ cp config.example.yaml config.yaml
 python -m jobwatch gui            # compact desktop UI (tkinter, no extra deps)
 python -m jobwatch run --dry      # collect and report, record nothing
 python -m jobwatch run            # record and write reports/<date>.md
-python -m jobwatch stats          # what the store holds
+python -m jobwatch stats          # status breakdown, response rate, worklist
+
+python -m jobwatch mark Systematic applied --note "sent QA CV"
+python -m jobwatch mark Systematic rejected
 ```
+
+## Tracking, not just finding
+
+A monitor that only tells you what is new leaves you to remember what you did
+about it. Every recorded job carries a status (`new`, `applied`, `rejected`,
+`interview`, `offer`, `skipped`) and `stats` reports the number that actually
+decides where effort goes: how many applications got any answer at all.
+
+A rejection counts as a response. Counting only interviews measures how good
+the applications are and hides the thing worth knowing first, which is whether
+anyone is reading them; silence and rejection fail for different reasons and
+want different fixes. `skipped` is tracked separately for the same reason: "I
+never saw it" and "I saw it and judged it wrong" are different facts.
 
 ```
 pytest              106 passed in 0.17s     offline: no network, no browser

@@ -14,3 +14,6 @@ jobwatch.db
 jobwatch.db-wal
 jobwatch.db-shm
 reports/
+
+# Written by the GUI launcher when startup fails. Runtime artefact.
+jobwatch-startup.log

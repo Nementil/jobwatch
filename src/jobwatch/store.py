@@ -25,11 +25,28 @@ CREATE TABLE IF NOT EXISTS seen_jobs (
     source      TEXT NOT NULL,
     location    TEXT NOT NULL DEFAULT '',
     posted      TEXT,
-    first_seen  TEXT NOT NULL
+    first_seen  TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'new',
+    status_at   TEXT,
+    note        TEXT NOT NULL DEFAULT ''
 );
+"""
+
+INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_seen_source ON seen_jobs(source);
 CREATE INDEX IF NOT EXISTS idx_seen_first  ON seen_jobs(first_seen);
-"""
+CREATE INDEX IF NOT EXISTS idx_seen_status ON seen_jobs(status);"""
+
+#: The lifecycle of an application. Ordered as it is actually walked, which
+#: is what `stats` reports against.
+#:
+#: `skipped` is not a failure state and earns its place: a monitor that only
+#: records what you applied to cannot tell "I never saw it" from "I saw it and
+#: judged it wrong", and those two mean very different things when you are
+#: deciding whether a lane is worth more effort.
+STATUSES: tuple[str, ...] = (
+    "new", "applied", "rejected", "interview", "offer", "skipped",
+)
 
 
 class JobStore:
@@ -51,6 +68,8 @@ class JobStore:
             except sqlite3.DatabaseError:
                 pass
         self._conn.executescript(SCHEMA)
+        self._migrate()
+        self._conn.executescript(INDEXES)
         self._conn.commit()
 
     # -- context manager ---------------------------------------------------
@@ -118,6 +137,88 @@ class JobStore:
             inserted = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
         self._conn.commit()
         return inserted
+
+    def _migrate(self) -> None:
+        """Add columns a database created by an older version is missing.
+
+        SQLite has no "ADD COLUMN IF NOT EXISTS", so the existing columns are
+        read first. Done rather than recreating the table because the store IS
+        the seen-set: dropping it re-notifies every job the tool has ever
+        found, which is the one outcome the whole design exists to avoid.
+        """
+        have = {row["name"] for row in self._conn.execute("PRAGMA table_info(seen_jobs)")}
+        for column, ddl in (
+            ("status",    "ALTER TABLE seen_jobs ADD COLUMN status TEXT NOT NULL DEFAULT 'new'"),
+            ("status_at", "ALTER TABLE seen_jobs ADD COLUMN status_at TEXT"),
+            ("note",      "ALTER TABLE seen_jobs ADD COLUMN note TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in have:
+                self._conn.execute(ddl)
+        self._conn.commit()
+
+    def set_status(self, fingerprint: str, status: str, note: str = "") -> bool:
+        """Move one job to `status`. Returns False if nothing matched.
+
+        Returning a bool rather than raising because the caller is a CLI
+        acting on a user-typed fingerprint, and "no such job" is an ordinary
+        outcome to report, not an exceptional one.
+        """
+        if status not in STATUSES:
+            raise ValueError(f"unknown status {status!r}, expected one of {STATUSES}")
+        cur = self._conn.execute(
+            "UPDATE seen_jobs SET status = ?, status_at = ?, note = ? WHERE fingerprint = ?",
+            (status, date.today().isoformat(), note, fingerprint),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def find(self, needle: str) -> list[sqlite3.Row]:
+        """Jobs whose fingerprint, company, title or url contains `needle`.
+
+        One lookup for every way a human might refer to a row they are looking
+        at in a report, so the CLI does not need four different flags.
+        """
+        like = f"%{needle}%"
+        return list(self._conn.execute(
+            "SELECT * FROM seen_jobs "
+            "WHERE fingerprint LIKE ? OR company LIKE ? OR title LIKE ? OR url LIKE ? "
+            "ORDER BY first_seen DESC",
+            (like, like, like, like),
+        ))
+
+    def by_status(self, status: str) -> list[sqlite3.Row]:
+        """Every job in one status, newest first."""
+        return list(self._conn.execute(
+            "SELECT * FROM seen_jobs WHERE status = ? ORDER BY first_seen DESC",
+            (status,),
+        ))
+
+    def status_counts(self) -> dict[str, int]:
+        """How many jobs sit in each status, including the empty ones.
+
+        Zeroes are included deliberately. A status missing from the output is
+        indistinguishable from a status the query forgot, and "0 interviews"
+        is a number worth seeing rather than an absence to infer.
+        """
+        counts = {name: 0 for name in STATUSES}
+        for row in self._conn.execute(
+            "SELECT status, COUNT(*) AS n FROM seen_jobs GROUP BY status"
+        ):
+            counts[row["status"]] = row["n"]
+        return counts
+
+    def response_rate(self) -> tuple[int, int, float]:
+        """(applied, answered, rate) where answered is any reply at all.
+
+        A rejection is a RESPONSE. Counting only interviews would measure a
+        different thing (how good the applications are) and hide the thing
+        this is for: whether anyone is reading them at all. Silence and
+        rejection fail for different reasons and want different fixes.
+        """
+        counts = self.status_counts()
+        applied = counts["applied"] + counts["rejected"] + counts["interview"] + counts["offer"]
+        answered = counts["rejected"] + counts["interview"] + counts["offer"]
+        return applied, answered, (answered / applied) if applied else 0.0
 
     def prune_before(self, cutoff: date) -> int:
         """Drop seen-records first observed before `cutoff`.

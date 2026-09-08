@@ -152,10 +152,71 @@ class RSSSource(Source):
         return jobs
 
 
+# Place names scanned for when a feed publishes no location field at all.
+#
+# Ordered longest-first so "Kongens Lyngby" is found before "Lyngby" and
+# "Frederiksberg" before "Frederiksborg" would ever be reached. Danish and
+# English spellings both appear because feeds mix them freely, and the
+# Swedish side is here because Malmo is 35 minutes from Copenhagen and is the
+# same labour market for an EU citizen.
+LOCATION_HINTS: tuple[str, ...] = (
+    "Kongens Lyngby", "Copenhagen", "Kobenhavn", "Kobenhavn", "Kobenhavn V",
+    "Frederiksberg", "Frederiksborg", "Hillerod", "Roskilde", "Ballerup",
+    "Glostrup", "Brondby", "Taastrup", "Herlev", "Soborg", "Horsholm",
+    "Kolding", "Esbjerg", "Randers", "Horsens", "Silkeborg", "Vejle",
+    "Aalborg", "Alborg", "Aarhus", "Arhus", "Odense", "Viborg", "Lyngby",
+    "Helsingborg", "Stockholm", "Gothenburg", "Goteborg", "Lund", "Malmo",
+    "Jylland", "Jutland", "Sjaelland", "Zealand", "Fyn", "Funen",
+    "Denmark", "Danmark", "Sweden", "Sverige",
+    "Remote", "Hybrid",
+)
+
+
+def _location_from_text(*fragments: str) -> str:
+    """First place name found in any fragment, or "".
+
+    A HEURISTIC, and worth naming as one. Jobindex, which is most of the
+    Danish volume here, publishes no location element at all: not in
+    `location`, not in `where`, not in `region`. The choice is between an
+    empty column on most rows and a guess read out of the text the feed does
+    publish.
+
+    A guess is the better trade ONLY because of how this value is used. It is
+    display metadata, shown so a human can tell Copenhagen from Aalborg at a
+    glance. It is deliberately not part of `Job.fingerprint`, and the location
+    FILTER already skips any job whose location is empty, so a wrong guess
+    cannot hide a vacancy that an empty field would have shown. The cost of
+    being wrong is a misleading label on one line; the cost of being empty is
+    scanning every posting by hand.
+
+    First match wins rather than collecting all of them, because a job listed
+    in three offices is still one job and the point is a rough orientation,
+    not an accurate address.
+    """
+    for fragment in fragments:
+        if not fragment:
+            continue
+        lowered = fragment.lower()
+        for hint in LOCATION_HINTS:
+            if hint.lower() in lowered:
+                return hint
+    return ""
+
+
 def normalise_location(entry: Any) -> str:
-    """Pull a location out of whichever field the feed happens to use."""
+    """Pull a location out of whichever field the feed happens to use.
+
+    Tries the structured fields first and only then falls back to reading the
+    text, so a feed that does the right thing is never second-guessed.
+    """
     for key in ("location", "where", "region"):
         value = getattr(entry, key, None)
         if isinstance(value, str) and value.strip():
             return value
-    return ""
+
+    summary = getattr(entry, "summary", None)
+    title = getattr(entry, "title", None)
+    return _location_from_text(
+        summary if isinstance(summary, str) else "",
+        title if isinstance(title, str) else "",
+    )

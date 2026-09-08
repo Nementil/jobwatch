@@ -133,15 +133,36 @@ class Job:
         basis = f"{self.company.lower()}|{self.title.lower()}|{self.url}"
         return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
 
-    def matches(self, keywords: Iterable[str]) -> bool:
+    def matches(self, keywords: Iterable[str], include_company: bool = False) -> bool:
         """True if any keyword appears in the title or tags.
 
         Substring rather than word matching, on purpose: the Danish market
         posts 'testautomatisering' and 'softwaretester' as single compound
         words, so a word-boundary match would miss the whole local market.
+
+        `include_company` widens the haystack to the employer name, and is
+        used only by the EXCLUSION path. Inclusion deliberately does not look
+        at the company: matching a keyword against an employer's name is how
+        you end up reporting every vacancy at a firm with "Test" in its title.
+        Exclusion wants the opposite behaviour, because "Novo Nordisk" in the
+        company field is exactly the signal being excluded on.
         """
-        haystack = f"{self.title} {' '.join(self.tags)}".lower()
+        haystack = f"{self.title} {' '.join(self.tags)}"
+        if include_company:
+            haystack += f" {self.company}"
+        haystack = haystack.lower()
         return any(k.lower().strip() in haystack for k in keywords if k.strip())
+
+    def company_matches(self, names: Iterable[str]) -> bool:
+        """True if the employer name contains any of `names`.
+
+        Separate from `matches` because a blocklist of employers is a
+        different question from a blocklist of words, and conflating them
+        makes both harder to reason about from the config file. Substring so
+        that "Ferring" catches "Ferring Pharmaceuticals A/S".
+        """
+        company = self.company.lower()
+        return any(n.lower().strip() in company for n in names if n.strip())
 
     def __str__(self) -> str:
         where = f" [{self.location}]" if self.location else ""

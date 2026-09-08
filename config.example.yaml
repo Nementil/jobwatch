@@ -20,6 +20,33 @@ keywords:
   - automation engineer
   - quality engineer
 
+# Dropped before the keyword filter runs, so an exclusion always wins.
+#
+# This exists because a Danish search for "QA" returns two unrelated
+# professions under one word. Roughly half of it is PHARMACEUTICAL quality
+# assurance: validation, regulatory documentation, batch release. It wants a
+# life-sciences degree and GMP experience, ISTQB does nothing for it, and it
+# is invisible to a keyword filter because it genuinely is quality assurance.
+# Without this list, that half has to be read and discarded by hand every run.
+exclude_keywords:
+  - GxP
+  - GMP
+  - batch release
+  - batchfrigivelse
+  - kvalitetschef
+  - regulatory affairs
+  - laegemiddel          # Danish: pharmaceutical
+
+# Matched against the employer name only, as a substring, so "Ferring"
+# catches "Ferring Pharmaceuticals A/S".
+exclude_companies:
+  - Ferring
+  - Lundbeck
+  - Novo Nordisk
+  - AJ Vaccines
+  - Pharmacosmos
+  - NNE
+
 # Empty list means "any location". Matched against location and tags.
 locations:
   - Copenhagen

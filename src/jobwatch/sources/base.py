@@ -70,15 +70,35 @@ def filter_jobs(
     jobs: Sequence[Job],
     keywords: Sequence[str],
     locations: Sequence[str] = (),
+    exclude_keywords: Sequence[str] = (),
+    exclude_companies: Sequence[str] = (),
 ) -> list[Job]:
-    """Keyword and location filter.
+    """Keyword and location filter, with exclusions.
 
     Empty `keywords` means "keep everything" rather than "keep nothing".
     The opposite reading is a footgun: a config with a typo'd key would
     silently report zero jobs and look like a quiet market.
+
+    EXCLUSION BEATS INCLUSION, always. A pharma validation role whose title
+    happens to contain "test" matches the keyword list and must still be
+    dropped, so the exclusion runs first and there is no way for an inclusion
+    to rescue an excluded job. The alternative (whichever matched more
+    strongly wins) is unpredictable from the config file, and a filter you
+    cannot predict from its config is one you stop trusting.
+
+    Why this exists at all: a Danish search for QA returns two unrelated
+    professions under one word. Roughly half of it is pharmaceutical quality
+    assurance -- GxP, validation, batch release -- which wants a life-sciences
+    degree and GMP experience, and is invisible to a keyword filter because it
+    genuinely is quality assurance. Without an exclusion list that half has to
+    be read and discarded by hand on every single run.
     """
     out = []
     for job in jobs:
+        if exclude_companies and job.company_matches(exclude_companies):
+            continue
+        if exclude_keywords and job.matches(exclude_keywords, include_company=True):
+            continue
         if keywords and not job.matches(keywords):
             continue
         # Location filtering is skipped entirely for a job whose `location`
