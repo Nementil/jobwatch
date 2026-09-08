@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobwatch"
+version = "0.1.0"
+description = "A job-board monitor built with Playwright and pytest."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.40",
+    "feedparser>=6.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=4.1"]
+
+[project.scripts]
+jobwatch = "jobwatch.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# Live and browser tests are deselected by default. The offline suite must
+# run anywhere, with no network, in under a second. Opt in with -m live.
+addopts = "-m 'not live and not browser and not gui' --strict-markers -q"
+markers = [
+    "live: hits a real job board over the network",
+    "browser: launches a real browser",
+    "gui: needs a Tk display",
+    "slow: takes more than a second",
+]
+
+[tool.coverage.run]
+source = ["src/jobwatch"]

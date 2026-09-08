@@ -1,0 +1,42 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # Weekly. The offline suite cannot break on its own, but the live contract
+    # checks can: this is how a board changing its markup gets noticed before
+    # a scheduled run silently starts returning nothing.
+    - cron: "0 6 * * 1"
+
+jobs:
+  offline:
+    name: offline suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      # No network, no browser. Must stay fast enough that nobody skips it.
+      - run: pytest
+
+  live:
+    name: live contract checks
+    runs-on: ubuntu-latest
+    # Only on the weekly schedule: these hit somebody else's servers, and
+    # running them on every push would be both rude and flaky.
+    if: github.event_name == 'schedule'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: playwright install --with-deps chromium
+      - run: pytest -m "live or browser" --override-ini="addopts=--strict-markers -q"

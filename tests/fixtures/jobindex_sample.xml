@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Trimmed, hand-written sample in the shape a Danish job feed returns.
+  Deliberately includes the awkward cases, because a fixture that only
+  contains well-formed entries tests nothing worth testing:
+    - an entry with no date            (dates are optional metadata)
+    - an entry with no author          (company must fall back)
+    - an entry with tracking params    (must canonicalise)
+    - an entry with no link            (must be dropped, not crash)
+    - a title with board decoration    (must normalise)
+    - non-ASCII Danish characters      (encoding must survive)
+-->
+<rss version="2.0">
+  <channel>
+    <title>Jobindex: testautomatisering</title>
+    <link>https://www.jobindex.dk/jobsoegning?q=testautomatisering</link>
+    <description>Job search results</description>
+
+    <item>
+      <title>Test Automation Engineer (m/f/d)</title>
+      <link>https://www.jobindex.dk/jobannonce/1001?utm_source=rss&amp;utm_medium=feed</link>
+      <author>FOSS</author>
+      <pubDate>Wed, 20 Aug 2026 09:00:00 +0200</pubDate>
+      <category>python</category>
+      <category>pytest</category>
+    </item>
+
+    <item>
+      <title>Softwaretester til Kobenhavn</title>
+      <link>https://www.jobindex.dk/jobannonce/1002</link>
+      <author>Milestone Systems</author>
+    </item>
+
+    <item>
+      <title>Senior SDET</title>
+      <link>https://www.jobindex.dk/jobannonce/1003</link>
+      <pubDate>Mon, 18 Aug 2026 12:30:00 +0200</pubDate>
+    </item>
+
+    <item>
+      <title>Testudvikler med erfaring i Playwright</title>
+      <link>https://www.jobindex.dk/jobannonce/1004</link>
+      <author>Trackman</author>
+      <pubDate>Tue, 19 Aug 2026 08:15:00 +0200</pubDate>
+    </item>
+
+    <item>
+      <title>Broken entry with no link</title>
+      <author>Nobody</author>
+    </item>
+
+  </channel>
+</rss>

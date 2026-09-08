@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Personal search terms and results stay local.
+config.yaml
+jobwatch.db
+jobwatch.db-wal
+jobwatch.db-shm
+reports/

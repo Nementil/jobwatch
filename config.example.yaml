@@ -1,0 +1,130 @@
+# jobwatch configuration
+#
+# Copy to config.yaml and edit. config.yaml is gitignored so your personal
+# search terms are not published along with the code.
+
+# Substring match against job title and tags. Case-insensitive.
+#
+# The Danish entries are not redundant with the English ones: Danish job
+# boards post compound words ("testautomatisering", not "test automation"),
+# so an English-only keyword list misses most of the local market. This was
+# the single biggest gap in my own search before writing this tool.
+keywords:
+  - QA
+  - test automation
+  - testautomatisering      # Danish: test automation
+  - softwaretester          # Danish: software tester
+  - testudvikler            # Danish: test developer
+  - kvalitetssikring        # Danish: quality assurance
+  - SDET
+  - automation engineer
+  - quality engineer
+
+# Empty list means "any location". Matched against location and tags.
+locations:
+  - Copenhagen
+  - København
+  - Aarhus
+  - Odense
+  - Denmark
+  - Danmark
+  - Remote
+
+# Drop seen-records older than this so the database does not grow forever.
+retain_days: 180
+
+report_path: reports
+
+sources:
+  # --- RSS: preferred. A feed is published for machine consumption. --------
+  # company_in_title: Jobindex appends the employer to the title and puts a
+  # broad job category in the author field. Without this flag every Danish
+  # listing is labelled "Systemudvikling og programmering".
+  - name: jobindex-testautomatisering
+    type: rss
+    url: https://www.jobindex.dk/jobsoegning.rss?q=testautomatisering
+    company_in_title: true
+    enabled: true
+
+  - name: jobindex-softwaretester
+    type: rss
+    url: https://www.jobindex.dk/jobsoegning.rss?q=softwaretester
+    company_in_title: true
+    enabled: true
+
+  - name: jobindex-sdet
+    type: rss
+    url: https://www.jobindex.dk/jobsoegning.rss?q=test+automation
+    company_in_title: true
+    enabled: true
+
+  - name: it-jobbank-test
+    type: rss
+    url: https://www.it-jobbank.dk/jobsoegning.rss?q=test
+    company_in_title: true
+    enabled: true
+
+  # --- Employer ATS feeds -------------------------------------------------
+  # Most employers embed a hosted job board (Teamtailor, Greenhouse, Lever)
+  # which publishes a public machine endpoint. This is how you monitor a
+  # company whose own careers page renders nothing without JavaScript.
+  #
+  # IO Interactive is the case in point: ioi.dk/careers is unreadable to a
+  # plain fetch, but the Teamtailor feed below works. Teamtailor is RSS, so
+  # it needs no special source type.
+  - name: io-interactive
+    type: rss
+    url: https://ioi.teamtailor.com/jobs.rss
+    company: IO Interactive
+    enabled: true
+
+  - name: sybo
+    type: rss
+    url: https://sybo.teamtailor.com/jobs.rss
+    company: SYBO
+    enabled: true
+
+  # Find a slug by looking at a company's careers URL:
+  #   boards.greenhouse.io/<slug>   ->  type: greenhouse
+  #   jobs.lever.co/<slug>          ->  type: lever
+  #   <slug>.teamtailor.com         ->  type: rss, url .../jobs.rss
+  # - name: some-studio
+  #   type: greenhouse
+  #   slug: somestudio
+  #   company: Some Studio
+  #   enabled: true
+
+
+  # --- Malmo, the Swedish side of the Oresund region ----------------------
+  # 35 minutes from Copenhagen by train. As an EU citizen both sides are open
+  # to you, so this is one labour market, not two.
+  #
+  # Only Sharkmob is enabled: it is the only one of the four whose feed I
+  # could verify returns real listings. The rest are left commented with the
+  # reason, rather than shipped broken and silently returning nothing.
+  - name: sharkmob
+    type: rss
+    url: https://sharkmob.teamtailor.com/jobs.rss
+    company: Sharkmob
+    enabled: true
+
+  # Avalanche Studios (Stockholm + Malmo): careers page is client-rendered and
+  # does not name its ATS. Open avalanchestudios.com/careers, click a job, and
+  # read the slug out of the URL it lands on, then add the matching source type.
+  #
+  # Tarsier Studios (Malmo): same, tarsier.se/jobs.
+  #
+  # Massive Entertainment (Malmo) hires through Ubisoft's central system. The
+  # SmartRecruiters public API answered for the company ids I tried but
+  # returned zero postings, so the id is wrong rather than the approach. Find
+  # the real one in the URL of any Ubisoft job posting.
+
+  # --- Browser: only for boards that render listings client-side. ---------
+  # Verify a board's terms of service and robots.txt before enabling one of
+  # these. Keep rate limits conservative. This is disabled by default so a
+  # fresh clone never scrapes anything without a deliberate decision.
+  - name: thehub
+    type: browser
+    url: https://thehub.io/jobs?search=QA
+    card_selector: '[class*="job-card"], article'
+    enabled: false
