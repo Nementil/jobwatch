@@ -118,11 +118,14 @@ class RSSSource(Source):
         url: str,
         default_company: str = "",
         company_in_title: bool = False,
+        company_before_colon: bool = False,
     ) -> None:
         self.name = name
         self.url = url
         self.default_company = default_company or name
         self.company_in_title = company_in_title
+        #: We Work Remotely titles read "Company: Job title".
+        self.company_before_colon = company_before_colon
 
     def fetch(self) -> str:
         request = urllib.request.Request(self.url, headers={"User-Agent": USER_AGENT})
@@ -145,7 +148,9 @@ class RSSSource(Source):
             )
 
             company = ""
-            if self.company_in_title:
+            if self.company_before_colon and ": " in title:
+                company, _, title = title.partition(": ")
+            elif self.company_in_title:
                 title, company = split_title_company(title)
             if not company:
                 company = _entry_company(entry, self.default_company)

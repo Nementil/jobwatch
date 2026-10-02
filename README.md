@@ -15,6 +15,8 @@ python -m jobwatch gui            # compact desktop UI (tkinter, no extra deps)
 python -m jobwatch run --dry      # collect and report, record nothing
 python -m jobwatch run            # record and write reports/<date>.md
 python -m jobwatch stats          # status breakdown, response rate, worklist
+python -m jobwatch capture        # save real ads to ads/ for labelling
+python -m jobwatch audit          # how often the language check agrees with you
 
 python -m jobwatch mark Systematic applied --note "sent QA CV"
 python -m jobwatch mark Systematic rejected
@@ -43,7 +45,7 @@ want different fixes. `skipped` is tracked separately for the same reason: "I
 never saw it" and "I saw it and judged it wrong" are different facts.
 
 ```
-pytest              314 passed in 0.71s     offline: no network, no browser
+pytest              365 passed in 1.00s     offline: no network, no browser
 pytest -m gui        28 passed in 1.30s     needs a Tk display
 pytest -m live        3 passed in 13.2s     hits real boards
 ```
@@ -101,6 +103,12 @@ clause by clause, in English, Danish, Swedish, German and the Romance languages:
 back as a repost with that said next to it, including when the title changed
 slightly.
 
+**Checking it against real ads.** `python -m jobwatch capture` saves every matching
+ad to `ads/` (gitignored: ad text is the employer's and may name a recruiter), with the
+detector's verdict in the header and `expected: ?` beside it. Replace the `?` with the
+right answer; from then on `pytest` checks that ad, and `python -m jobwatch audit`
+prints where the detector and you disagree.
+
 It is all heuristic, and it never hides anything: unviable jobs are listed last and
 greyed in the GUI, with a *Hide unviable* toggle that is off by default. Weights,
 boost words and seniority penalties are in the `ranking:` section of the config.
@@ -110,8 +118,23 @@ boost words and seniority penalties are in the `ranking:` section of the config.
 | Kind | How | Reach |
 |---|---|---|
 | Danish aggregators | RSS | `jobindex.dk` and `it-jobbank.dk`, arbitrary queries each |
-| Employer job boards | Teamtailor RSS, Greenhouse and Lever JSON | any company using one, which is most of them |
+| Swedish public job board | JobTech JSON (CC0 open data) | every ad on Arbetsförmedlingen's Platsbanken |
+| Remote boards | Remotive, Remote OK, Jobicy, Himalayas, Arbeitnow JSON; We Work Remotely RSS | remote jobs worldwide, restriction kept in the location |
+| Employer job boards | Teamtailor RSS; Greenhouse, Lever, Ashby, Workable, SmartRecruiters JSON | any company using one, which is most studios |
 | Client-rendered boards | Playwright | anything else, opt in only |
+
+**Only official endpoints.** Every source is one the site publishes for machine use,
+with no login and no terms against it. Remote OK's terms ask for a link back and the
+name "Remote OK" as the source; every report line links to the Remote OK listing and
+names the source. The new board parsers were written from each site's documentation,
+so run `pytest -m live` once before relying on them: it checks every board's real
+payload against its parser.
+
+**LinkedIn, Indeed and Glassdoor are left out on purpose.** None publishes a public
+feed, their terms forbid automated collection, and the "LinkedIn RSS" services that
+exist work by scraping it. The legal route is the job-alert e-mail LinkedIn sends you:
+set up an alert, and add those jobs with `jobwatch add` (reading the alert e-mails
+automatically is a planned source).
 
 The middle row is the one worth knowing about. Most employers do not run their own
 job board, they embed a hosted one, and every one of those publishes a public machine
@@ -142,7 +165,7 @@ three separately-marked tests whose only job is to notice that a board changed i
 markup, and the parsing logic they guard is covered offline against saved fixtures.
 
 ```bash
-pytest              # 314 offline tests, no network, no browser
+pytest              # 365 offline tests, no network, no browser
 pytest -m gui       # tkinter tests, needs a display
 pytest -m live      # contract checks against the real boards
 ```
@@ -225,10 +248,12 @@ src/jobwatch/
   report.py          pure rendering by tier, no IO
   cli.py             argparse entry point
   gui.py             tkinter UI, worker thread + Queue
+  capture.py         save real ads, read labels back, audit
   sources/
     base.py          Source ABC: fetch/parse split, failure isolation
-    rss.py           feedparser (also covers Teamtailor)
-    ats.py           Greenhouse and Lever JSON APIs
+    rss.py           feedparser (also covers Teamtailor, We Work Remotely)
+    ats.py           Greenhouse, Lever, Ashby, Workable, SmartRecruiters
+    boards.py        Remotive, Remote OK, Jobicy, Himalayas, Arbeitnow, JobTech
     browser.py       Playwright, Page Object Model
 tests/
   test_models.py     normalisation and identity
@@ -240,6 +265,9 @@ tests/
   test_language.py   requirement phrasing in five languages
   test_ranking.py    tiers and order, not exact scores
   test_vacancies.py  store, CLI and sources once listings group
+  test_boards.py     board and ATS parsers, from documented shapes
+  test_capture.py    capture, labels, audit
+  test_real_ads.py   the detector against ads you labelled
   test_gui.py        input parsing + row/results alignment (opt in)
   fixtures/          saved payloads
   live/              network + browser contract checks (opt in)

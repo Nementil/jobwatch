@@ -17,3 +17,6 @@ reports/
 
 # Written by the GUI launcher when startup fails. Runtime artefact.
 jobwatch-startup.log
+
+# Ads saved by `jobwatch capture`. Employer text, may contain recruiter contacts.
+ads/

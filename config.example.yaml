@@ -56,6 +56,13 @@ locations:
   - Denmark
   - Danmark
   - Remote
+  # The Swedish side of the Oresund region, for Platsbanken and Sharkmob.
+  - Malmö
+  - Malmo
+  - Lund
+  - Helsingborg
+  - Sverige
+  - Sweden
 
 # The languages you can WORK in, and the ones you only get by in. A job that
 # states a requirement for a language outside `fluent` is ranked unviable,
@@ -102,6 +109,11 @@ ranking:
     manager: 20
     architect: 15
   stale_after_days: 45
+  # A remote job limited to a region not named here ("Remote (USA only)")
+  # costs 25 points. Matched as whole words against the restriction.
+  remote_regions: [worldwide, anywhere, global, europe, european, emea, eu,
+                   denmark, sweden, nordic, nordics, scandinavia, france, italy,
+                   spain, cet, cest, gmt, utc]
 
 # Drop seen-records older than this so the database does not grow forever.
 retain_days: 180
@@ -191,6 +203,94 @@ sources:
   # SmartRecruiters public API answered for the company ids I tried but
   # returned zero postings, so the id is wrong rather than the approach. Find
   # the real one in the URL of any Ubisoft job posting.
+
+  # --- Sweden: Arbetsförmedlingen's open data (Platsbanken) --------------
+  # Every ad on Sweden's public job board, published by the Swedish public
+  # employment service as open data (CC0) for exactly this use. No key.
+  - name: platsbanken-testare
+    type: jobtech
+    query: testare
+    enabled: true
+
+  - name: platsbanken-qa
+    type: jobtech
+    query: QA
+    enabled: true
+
+  # --- Remote boards with an official, keyless API ------------------------
+  # Each one publishes its API for third-party use. None has been fetched
+  # from this repository yet: run `pytest -m live` once, then `run --dry`.
+  # Remote jobs come back with their restriction in the location, e.g.
+  # "Remote (USA only)", which the ranking penalises (see remote_regions).
+  - name: remotive
+    type: remotive
+    query: qa
+    enabled: true
+
+  # Remote OK's API terms: link back to the job on Remote OK and name
+  # "Remote OK" as the source. Reports do both, as long as this source keeps
+  # a name containing "remoteok". Do not use their logo.
+  - name: remoteok
+    type: remoteok
+    query: qa
+    enabled: true
+
+  - name: jobicy
+    type: jobicy
+    query: qa
+    enabled: true
+
+  - name: himalayas
+    type: himalayas
+    query: qa
+    enabled: true
+
+  # European jobs, mostly from employers' own ATS boards. No search
+  # parameter: the keyword filter does the work.
+  - name: arbeitnow
+    type: arbeitnow
+    remote_only: true
+    enabled: true
+
+  # We Work Remotely publishes RSS per category. There is no QA category, so
+  # this reads the programming feed and the keyword filter picks QA out.
+  - name: weworkremotely
+    type: rss
+    url: https://weworkremotely.com/categories/remote-programming-jobs.rss
+    company_before_colon: true     # titles read "Company: Job title"
+    enabled: true
+
+  # --- Games ---------------------------------------------------------------
+  # Work With Indies links an RSS feed in its site footer; I could not read
+  # the exact URL from here. Copy it from workwithindies.com and enable.
+  # - name: workwithindies
+  #   type: rss
+  #   url: <the feed URL from the footer>
+  #   enabled: true
+  #
+  # gamesjobsdirect.com: no public feed or API found. Its listings would need
+  # the browser source, after checking its terms and robots.txt.
+  #
+  # Most studios post through an ATS, which is the better route anyway: one
+  # source per studio, straight from the employer. Read the slug from the
+  # URL a "Careers" link lands on:
+  #   jobs.ashbyhq.com/<slug>              ->  type: ashby
+  #   apply.workable.com/<slug>/           ->  type: workable
+  #   jobs.smartrecruiters.com/<slug>/...  ->  type: smartrecruiters
+  #   boards.greenhouse.io/<slug>          ->  type: greenhouse
+  #   jobs.lever.co/<slug>                 ->  type: lever
+  #   <slug>.teamtailor.com                ->  type: rss, url .../jobs.rss
+  # - name: some-studio
+  #   type: ashby
+  #   slug: somestudio
+  #   company: Some Studio
+  #   enabled: true
+
+  # --- Not included, on purpose -------------------------------------------
+  # LinkedIn, Indeed and Glassdoor publish no public feed, and their terms
+  # forbid automated collection; "RSS for LinkedIn" services scrape it. The
+  # legal route is the job-alert e-mail LinkedIn sends you (see README).
+  # Jobnet.dk (the Danish public board) offers no open API I could find.
 
   # --- Browser: only for boards that render listings client-side. ---------
   # Verify a board's terms of service and robots.txt before enabling one of

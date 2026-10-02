@@ -44,6 +44,16 @@ DEFAULT_PENALISE: dict[str, int] = {
 
 _LANGUAGE_POINTS = {BLOCKED: -60, LIKELY: -35, PLUS: -5}
 
+#: Regions a remote job may be limited to and still be open to you. Remote
+#: boards publish "USA only" as often as "Worldwide", and a remote role you
+#: may not legally take is as dead as one that needs fluent Danish.
+DEFAULT_REMOTE_REGIONS: tuple[str, ...] = (
+    "worldwide", "anywhere", "global", "europe", "european", "emea", "eu",
+    "denmark", "sweden", "nordic", "nordics", "scandinavia", "france", "italy",
+    "spain", "cet", "cest", "gmt", "utc",
+)
+REMOTE_RESTRICTED_POINTS = -25
+
 
 @dataclass(frozen=True)
 class RankingSettings:
@@ -52,6 +62,7 @@ class RankingSettings:
     penalise: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_PENALISE))
     profile: LanguageProfile = DEFAULT_PROFILE
     stale_after_days: int = 45
+    remote_regions: tuple[str, ...] = DEFAULT_REMOTE_REGIONS
 
     @classmethod
     def from_config(cls, config: Mapping | None, keywords: Iterable[str] | None = None) -> "RankingSettings":
@@ -69,6 +80,8 @@ class RankingSettings:
             penalise=_weights(section.get("penalise"), DEFAULT_PENALISE),
             profile=LanguageProfile.from_config(config),
             stale_after_days=int(section.get("stale_after_days", 45)),
+            remote_regions=tuple(str(r).lower() for r in
+                                 section.get("remote_regions", DEFAULT_REMOTE_REGIONS)),
         )
 
 
@@ -155,6 +168,21 @@ _ACTED_PHRASE = {
 }
 
 
+def _remote_points(location: str, regions: Sequence[str]) -> tuple[int, list[str]]:
+    """Penalise "Remote (USA only)" when none of your regions is named.
+
+    Only looks at the "Remote (...)" form the remote boards produce. A bare
+    "Remote", or no location at all, says nothing and costs nothing.
+    """
+    text = location.strip()
+    if not text.lower().startswith("remote (") or not text.endswith(")"):
+        return 0, []
+    restriction = text[len("remote ("):-1]
+    if any(_word_in(region, restriction.lower()) for region in regions):
+        return 0, []
+    return REMOTE_RESTRICTED_POINTS, [f"{REMOTE_RESTRICTED_POINTS} remote only for {restriction}"]
+
+
 def _history_points(prior: Prior | None) -> tuple[int, list[str]]:
     if prior is None or prior.status == "new":
         return 0, []
@@ -193,6 +221,10 @@ def assess(vacancy: Vacancy, settings: RankingSettings, prior: Prior | None = No
 
     verdict = assess_language(text, settings.profile)
     points, why = _language_points(verdict, settings.profile)
+    score += points
+    reasons += why
+
+    points, why = _remote_points(vacancy.location, settings.remote_regions)
     score += points
     reasons += why
 

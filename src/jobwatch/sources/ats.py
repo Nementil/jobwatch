@@ -168,3 +168,146 @@ class LeverSource(Source):
             except ValueError:
                 continue
         return jobs
+
+
+class AshbySource(Source):
+    """Ashby public job posting API.
+
+        https://api.ashbyhq.com/posting-api/job-board/<board>
+
+    The board name is the last path segment of jobs.ashbyhq.com/<board>.
+    Publishes a plain-text description, which is what the language check reads.
+    """
+
+    def __init__(self, name: str, slug: str, company: str = "") -> None:
+        self.name = name
+        self.slug = slug
+        self.company = company or slug
+
+    @property
+    def url(self) -> str:
+        return f"https://api.ashbyhq.com/posting-api/job-board/{self.slug}"
+
+    def fetch(self) -> str:
+        return _fetch_json(self.url, self.rate_limit_seconds)
+
+    def parse(self, payload: str) -> list[Job]:
+        from .boards import parse_date
+
+        data = json.loads(payload)
+        jobs: list[Job] = []
+        for item in data.get("jobs", []) if isinstance(data, dict) else []:
+            if not isinstance(item, dict) or item.get("isListed") is False:
+                continue
+            location = item.get("location", "") or ""
+            if item.get("isRemote"):
+                location = f"Remote ({location})" if location and location.lower() != "remote" else "Remote"
+            try:
+                jobs.append(Job(
+                    title=item.get("title", ""), company=self.company,
+                    url=item.get("jobUrl", "") or item.get("applyUrl", ""),
+                    source=self.name, location=location,
+                    posted=parse_date(item.get("publishedAt")),
+                    tags=tuple(t for t in (item.get("department"), item.get("team")) if t),
+                    description=item.get("descriptionPlain") or item.get("descriptionHtml") or "",
+                ))
+            except ValueError:
+                continue
+        return jobs
+
+
+class WorkableSource(Source):
+    """Workable's public careers widget.
+
+        https://apply.workable.com/api/v1/widget/accounts/<account>?details=true
+
+    The account is the slug in apply.workable.com/<account>/. details=true
+    adds the description. The company name comes from the payload itself.
+    """
+
+    def __init__(self, name: str, slug: str, company: str = "") -> None:
+        self.name = name
+        self.slug = slug
+        self.company = company
+
+    @property
+    def url(self) -> str:
+        return f"https://apply.workable.com/api/v1/widget/accounts/{self.slug}?details=true"
+
+    def fetch(self) -> str:
+        return _fetch_json(self.url, self.rate_limit_seconds)
+
+    def parse(self, payload: str) -> list[Job]:
+        from .boards import parse_date
+
+        data = json.loads(payload)
+        if not isinstance(data, dict):
+            return []
+        company = self.company or data.get("name") or self.slug
+        jobs: list[Job] = []
+        for item in data.get("jobs", []):
+            if not isinstance(item, dict):
+                continue
+            place = ", ".join(p for p in (item.get("city"), item.get("country")) if p)
+            if item.get("telecommuting"):
+                place = f"Remote ({place})" if place else "Remote"
+            try:
+                jobs.append(Job(
+                    title=item.get("title", ""), company=company,
+                    url=item.get("url", "") or item.get("shortlink", ""),
+                    source=self.name, location=place,
+                    posted=parse_date(item.get("published_on") or item.get("created_at")),
+                    tags=tuple(t for t in (item.get("department"),) if t),
+                    description=item.get("description", "") or "",
+                ))
+            except ValueError:
+                continue
+        return jobs
+
+
+class SmartRecruitersSource(Source):
+    """SmartRecruiters public Posting API.
+
+        https://api.smartrecruiters.com/v1/companies/<company>/postings
+
+    Only for employers who enabled the public feed; others answer with an
+    empty list, which is reported as zero jobs, not an error. The list
+    endpoint carries no description, so the language check sees only the
+    title for these.
+    """
+
+    def __init__(self, name: str, slug: str, company: str = "") -> None:
+        self.name = name
+        self.slug = slug
+        self.company = company
+
+    @property
+    def url(self) -> str:
+        return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?limit=100"
+
+    def fetch(self) -> str:
+        return _fetch_json(self.url, self.rate_limit_seconds)
+
+    def parse(self, payload: str) -> list[Job]:
+        from .boards import parse_date
+
+        data = json.loads(payload)
+        jobs: list[Job] = []
+        for item in data.get("content", []) if isinstance(data, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            loc = item.get("location") or {}
+            place = ", ".join(p for p in (loc.get("city"), loc.get("country")) if p)
+            if loc.get("remote"):
+                place = f"Remote ({place})" if place else "Remote"
+            company = self.company or (item.get("company") or {}).get("name") or self.slug
+            try:
+                jobs.append(Job(
+                    title=item.get("name", ""), company=company,
+                    url=f"https://jobs.smartrecruiters.com/{self.slug}/{item.get('id', '')}",
+                    source=self.name, location=place,
+                    posted=parse_date(item.get("releasedDate")),
+                ))
+            except ValueError:
+                continue
+        return jobs

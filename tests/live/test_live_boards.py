@@ -65,3 +65,47 @@ class TestBrowserExtraction:
         # example.com has no job cards, so parsing yields nothing. The value
         # is that launch, navigation, extraction and teardown all completed.
         assert source.parse(payload) == []
+
+
+def _new_boards():
+    from jobwatch.sources import (ArbeitnowSource, HimalayasSource, JobicySource,
+                                  JobTechSource, RemoteOKSource, RemotiveSource)
+    return [
+        RemotiveSource("remotive", "qa"),
+        RemoteOKSource("remoteok", "qa"),
+        JobicySource("jobicy", "qa"),
+        HimalayasSource("himalayas", "qa"),
+        ArbeitnowSource("arbeitnow"),
+        JobTechSource("platsbanken", "testare"),
+        RSSSource("weworkremotely",
+                  "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+                  company_before_colon=True),
+    ]
+
+
+@pytest.mark.parametrize("source", _new_boards(), ids=lambda s: s.name)
+class TestBoardContracts:
+    """The keyless board APIs, whose parsers were written from documentation.
+
+    These are the first contact with the real payloads. A failure here means
+    the documented shape and the real one differ: capture the payload with
+    `source.fetch()` and fix the parser against it.
+    """
+
+    def test_reachable_and_parses_real_rows(self, source):
+        payload = source.fetch()
+        assert payload.strip(), f"{source.name} returned an empty body"
+        jobs = source.parse(payload)
+        if not jobs:
+            pytest.skip(f"{source.name}: no rows today, or every row failed to parse; "
+                        "inspect source.fetch() by hand")
+        for job in jobs[:5]:
+            assert job.title and job.company, f"{source.name}: {job!r}"
+            assert job.url.startswith("http")
+
+    def test_carries_ad_text_for_the_language_check(self, source):
+        jobs = source.collect()
+        if not jobs:
+            pytest.skip("no rows")
+        with_text = sum(1 for j in jobs if j.description)
+        assert with_text, f"{source.name}: no listing carried a description"

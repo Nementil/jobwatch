@@ -23,11 +23,27 @@ import yaml
 from .models import Job
 from .ranking import RankingSettings, rank_jobs
 from .report import render_console, render_markdown
-from .sources import (BrowserSource, GreenhouseSource, LeverSource, RSSSource,
-                      Source, filter_jobs)
+from .sources import (ArbeitnowSource, AshbySource, BrowserSource, GreenhouseSource,
+                      HimalayasSource, JobicySource, JobTechSource, LeverSource,
+                      RemoteOKSource, RemotiveSource, RSSSource, SmartRecruitersSource,
+                      Source, WorkableSource, filter_jobs)
 from .store import STATUSES, JobStore
 
 log = logging.getLogger("jobwatch")
+
+
+#: Employer job boards: one company each, identified by a slug.
+ATS_TYPES = {
+    "greenhouse": GreenhouseSource, "lever": LeverSource, "ashby": AshbySource,
+    "workable": WorkableSource, "smartrecruiters": SmartRecruitersSource,
+}
+
+#: Multi-employer boards with an official keyless API. Extra config keys
+#: (category, geo, limit, remote_only, ...) are passed through as options.
+BOARD_TYPES = {
+    "remotive": RemotiveSource, "remoteok": RemoteOKSource, "jobicy": JobicySource,
+    "himalayas": HimalayasSource, "arbeitnow": ArbeitnowSource, "jobtech": JobTechSource,
+}
 
 
 def build_sources(config: dict) -> list[Source]:
@@ -45,6 +61,7 @@ def build_sources(config: dict) -> list[Source]:
                         url=entry["url"],
                         default_company=entry.get("company", ""),
                         company_in_title=entry.get("company_in_title", False),
+                        company_before_colon=entry.get("company_before_colon", False),
                     )
                 )
             elif kind == "browser":
@@ -56,21 +73,19 @@ def build_sources(config: dict) -> list[Source]:
                         headless=entry.get("headless", True),
                     )
                 )
-            elif kind == "greenhouse":
+            elif kind in ATS_TYPES:
                 sources.append(
-                    GreenhouseSource(
+                    ATS_TYPES[kind](
                         name=entry["name"],
                         slug=entry["slug"],
                         company=entry.get("company", ""),
                     )
                 )
-            elif kind == "lever":
+            elif kind in BOARD_TYPES:
+                options = {k: v for k, v in entry.items()
+                           if k not in ("name", "type", "query", "enabled")}
                 sources.append(
-                    LeverSource(
-                        name=entry["name"],
-                        slug=entry["slug"],
-                        company=entry.get("company", ""),
-                    )
+                    BOARD_TYPES[kind](name=entry["name"], query=entry.get("query", ""), **options)
                 )
             else:
                 log.warning("unknown source type %r for %r, skipping", kind, entry.get("name"))
@@ -121,6 +136,41 @@ def run(config: dict, db_path: str, dry: bool) -> int:
             removed = store.prune_before(date.today() - timedelta(days=retain_days))
             if removed:
                 log.info("pruned %d records older than %d days", removed, retain_days)
+    return 0
+
+
+def collect_matching(config: dict) -> list[Job]:
+    """Every source, filtered by the config. No store access."""
+    collected: list[Job] = []
+    for source in build_sources(config):
+        collected.extend(source.collect())
+    return filter_jobs(
+        collected, config.get("keywords", []), config.get("locations", []),
+        config.get("exclude_keywords", []), config.get("exclude_companies", []),
+    )
+
+
+def capture(config: dict, out: str) -> int:
+    """Save every matching ad for labelling. See capture.py."""
+    from . import capture as cap
+    from .dedupe import group_listings
+    from .language import LanguageProfile
+
+    vacancies = group_listings(collect_matching(config))
+    written, existing = cap.save(vacancies, Path(out), LanguageProfile.from_config(config))
+    print(f"{written} ad(s) written to {out}/, {existing} already there (left untouched).")
+    if written:
+        print("Open them, set `expected:` in each header, then run "
+              "`python -m jobwatch audit` or `pytest`.")
+    return 0
+
+
+def audit_ads(config: dict, out: str) -> int:
+    from . import capture as cap
+    from .language import LanguageProfile
+
+    ads = cap.load_all([Path(out), Path("tests/fixtures/ads")])
+    print("\n".join(cap.audit(ads, LanguageProfile.from_config(config))))
     return 0
 
 
@@ -233,7 +283,8 @@ def add(db_path: str, company: str, title: str, url: str = "",
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jobwatch", description="Job board monitor.")
-    parser.add_argument("command", choices=["run", "stats", "gui", "mark", "add"])
+    parser.add_argument("command",
+                        choices=["run", "stats", "gui", "mark", "add", "capture", "audit"])
     parser.add_argument("needle", nargs="?", help="mark: text identifying the job")
     parser.add_argument("status", nargs="?", choices=STATUSES,
                         help="mark: the status to move it to")
@@ -250,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-c", "--config", default="config.yaml")
     parser.add_argument("--db", default="jobwatch.db")
     parser.add_argument("--dry", action="store_true", help="report without recording")
+    parser.add_argument("--out", default="ads", help="capture/audit: folder for saved ads")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -281,10 +333,17 @@ def main(argv: list[str] | None = None) -> int:
         return gui_main(args.config, args.db)
 
     config_path = Path(args.config)
+    if args.command == "audit" and not config_path.exists():
+        # Auditing reads saved files only; the default language profile will do.
+        return audit_ads({}, args.out)
     if not config_path.exists():
         log.error("config not found: %s (copy config.example.yaml)", config_path)
         return 2
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if args.command == "capture":
+        return capture(config, args.out)
+    if args.command == "audit":
+        return audit_ads(config, args.out)
     return run(config, args.db, args.dry)
 
 
