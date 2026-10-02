@@ -21,6 +21,7 @@ from pathlib import Path
 import yaml
 
 from .models import Job
+from .ranking import RankingSettings, rank_jobs
 from .report import render_console, render_markdown
 from .sources import (BrowserSource, GreenhouseSource, LeverSource, RSSSource,
                       Source, filter_jobs)
@@ -100,15 +101,21 @@ def run(config: dict, db_path: str, dry: bool) -> int:
         "%d matched (%d dropped by filters)", len(matched), len(collected) - len(matched)
     )
 
+    settings = RankingSettings.from_config(config)
+    today = date.today()
     with JobStore(db_path) as store:
         fresh = store.new_jobs(matched)
-        print(render_console(fresh, date.today()))
+        # Ranked BEFORE the fresh listings are recorded: the history lookup is
+        # what says "you applied to this in September", and once these rows
+        # are written every one of them would be its own history.
+        ranked = rank_jobs(fresh, settings, store, today)
+        print(render_console(ranked, today))
         if not dry and fresh:
             store.mark_seen(fresh)
             out = Path(config.get("report_path", "reports"))
             out.mkdir(parents=True, exist_ok=True)
-            report_file = out / f"{date.today().isoformat()}.md"
-            report_file.write_text(render_markdown(fresh, date.today()), encoding="utf-8")
+            report_file = out / f"{today.isoformat()}.md"
+            report_file.write_text(render_markdown(ranked, today), encoding="utf-8")
             log.info("wrote %s", report_file)
         if not dry and retain_days > 0:
             removed = store.prune_before(date.today() - timedelta(days=retain_days))
@@ -122,7 +129,9 @@ def stats(db_path: str) -> int:
         counts = store.status_counts()
         applied, answered, rate = store.response_rate()
 
-        print(f"{store.count()} job(s) recorded in {db_path}")
+        listings, vacancies = store.count(), store.vacancy_count()
+        merged = f" ({listings} listings)" if listings != vacancies else ""
+        print(f"{vacancies} vacancy(ies) recorded in {db_path}{merged}")
         print("  " + "  ".join(f"{name}={counts[name]}" for name in STATUSES))
         if applied:
             print(f"  response rate: {answered}/{applied} = {rate:.0%}")
@@ -138,7 +147,8 @@ def stats(db_path: str) -> int:
             print(f"unactioned ({len(pending)}):")
             for row in pending[:20]:
                 where = f" [{row['location']}]" if row["location"] else ""
-                print(f"  {row['fingerprint'][:8]}  {row['company']}: {row['title']}{where}")
+                boards = f"  ({row['listings']} boards)" if row["listings"] > 1 else ""
+                print(f"  {row['fingerprint'][:8]}  {row['company']}: {row['title']}{where}{boards}")
             if len(pending) > 20:
                 print(f"  ... and {len(pending) - 20} more")
     return 0
@@ -157,14 +167,17 @@ def mark(db_path: str, needle: str, status: str, note: str = "") -> int:
         if not rows:
             log.error("nothing matches %r", needle)
             return 1
-        if len(rows) > 1:
+        # Several listings of ONE vacancy are not ambiguous: the status
+        # applies to all of them anyway (JobStore.set_status).
+        if len({r["vacancy_key"] for r in rows}) > 1:
             log.error("%r matches %d jobs, be more specific:", needle, len(rows))
             for row in rows[:10]:
                 print(f"  {row['fingerprint'][:8]}  {row['company']}: {row['title']}")
             return 1
         row = rows[0]
         store.set_status(row["fingerprint"], status, note)
-        print(f"{status}: {row['company']}: {row['title']}")
+        boards = f" ({len(rows)} listings)" if len(rows) > 1 else ""
+        print(f"{status}: {row['company']}: {row['title']}{boards}")
     return 0
 
 
@@ -193,6 +206,8 @@ def add(db_path: str, company: str, title: str, url: str = "",
         # second row: two rows for one application would silently inflate the
         # denominator of the response rate.
         existed = store.is_seen(job)
+        others = [r for r in store.find(job.company)
+                  if r["vacancy_key"] == job.vacancy_key and r["fingerprint"] != job.fingerprint]
         if not existed:
             store.mark_seen([job])
         store.set_status(job.fingerprint, status, note)
@@ -201,6 +216,11 @@ def add(db_path: str, company: str, title: str, url: str = "",
     where = f" [{job.location}]" if job.location else ""
     print(f"{verb}: {job.company}: {job.title}{where}")
     print(f"  status={status}  fingerprint={job.fingerprint[:8]}")
+    if others:
+        # The same vacancy already came in through a feed. It is one job, so
+        # the status was applied to those listings too.
+        boards = ", ".join(sorted({r["source"] for r in others}))
+        print(f"  same vacancy as {len(others)} listing(s) from {boards}: marked {status} too")
     if not url:
         # The fingerprint is company|title|url, so two postings with the same
         # title at one employer collide when neither carries a URL. Worth

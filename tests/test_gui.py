@@ -96,7 +96,7 @@ class TestResultsAlignment:
         index = list(populated.tree["columns"]).index(column)
         for position, item in enumerate(populated.tree.get_children()):
             row_value = str(populated.tree.item(item, "values")[index])
-            job = populated.results[position]
+            job = populated.results[position].job
             expected = {
                 "company": job.company,
                 "title": job.title,
@@ -107,14 +107,14 @@ class TestResultsAlignment:
 
     def test_sorting_is_actually_sorted(self, populated):
         populated._sort_by("company")
-        companies = [j.company for j in populated.results]
+        companies = [r.job.company for r in populated.results]
         assert companies == sorted(companies, key=str.lower)
 
     def test_selected_job_lookup_follows_sort(self, populated):
         populated._sort_by("company")
         first_item = populated.tree.get_children()[0]
         populated.tree.selection_set(first_item)
-        assert populated._selected_job().company == populated.results[0].company
+        assert populated._selected_job().company == populated.results[0].job.company
 
     def test_no_selection_returns_none(self, populated):
         populated.tree.selection_remove(*populated.tree.selection())

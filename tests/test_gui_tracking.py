@@ -71,8 +71,8 @@ class TestSortColumns:
         gui._show_results(jobs, total_seen=2)
         gui._sort_by("company")
         first_row = gui.tree.item(gui.tree.get_children("")[0], "values")
-        assert first_row[1] == "Alpha"
-        assert gui.results[0].company == "Alpha"
+        assert first_row[list(gui.tree["columns"]).index("company")] == "Alpha"
+        assert gui.results[0].job.company == "Alpha"
 
 
 class TestStatusColumn:
@@ -137,3 +137,77 @@ class TestRateSummary:
         gui.mark_status.set("rejected")
         gui.on_set_status()
         assert "1/1 (100%)" in gui._rate_summary()
+
+
+@pytest.fixture
+def mixed():
+    """One vacancy on two boards, a viable role, and one needing Danish."""
+    return [
+        Job(title="QA Engineer", company="IO Interactive A/S",
+            url="https://jobindex.dk/1", source="jobindex"),
+        Job(title="QA Engineer", company="IO Interactive",
+            url="https://ioi.teamtailor.com/1", source="io-interactive"),
+        Job(title="QA Specialist", company="Netcompany", url="https://x.dk/2",
+            source="jobindex", description="Du taler og skriver flydende dansk."),
+    ]
+
+
+def column(gui, item, name):
+    return gui.tree.item(item, "values")[list(gui.tree["columns"]).index(name)]
+
+
+class TestVacancyRows:
+    def test_one_row_per_vacancy_naming_the_other_boards(self, gui, mixed):
+        gui._show_results(mixed, total_seen=3)
+        rows = gui.tree.get_children("")
+        assert len(rows) == 2
+        ioi = next(r for r in rows if column(gui, r, "company").startswith("IO"))
+        assert column(gui, ioi, "source").endswith("+1")
+
+    def test_best_first(self, gui, mixed):
+        gui._show_results(mixed, total_seen=3)
+        first = gui.tree.get_children("")[0]
+        assert column(gui, first, "tier") == "viable"
+        last = gui.tree.get_children("")[-1]
+        assert column(gui, last, "language") == "Needs Danish"
+
+    def test_hide_unviable_keeps_rows_and_results_aligned(self, gui, mixed):
+        gui._show_results(mixed, total_seen=3)
+        gui.hide_unviable.set(True)
+        gui._render()
+        assert len(gui.tree.get_children("")) == len(gui.results) == 1
+        assert "1 unviable hidden" in gui.status_text.get()
+        gui.hide_unviable.set(False)
+        gui._render()
+        assert len(gui.results) == 2
+
+    def test_score_sorts_numerically_best_first(self, gui):
+        jobs = [Job(title=t, company=c, url=f"https://x.dk/{i}", source="s")
+                for i, (t, c) in enumerate([("QA Engineer", "A"), ("Head of QA", "B"),
+                                            ("QA Test Engineer", "C")])]
+        gui._show_results(jobs, total_seen=3)
+        gui._sort_by("score")
+        scores = [r.assessment.score for r in gui.results]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_marking_a_vacancy_marks_every_listing(self, gui, mixed):
+        from jobwatch.store import JobStore
+
+        gui._show_results(mixed, total_seen=3)
+        ioi = next(r for r in gui.tree.get_children("")
+                   if column(gui, r, "company").startswith("IO"))
+        gui.tree.selection_set(ioi)
+        gui._on_select()
+        gui.mark_status.set("applied")
+        gui.on_set_status()
+        with JobStore(gui.db_path) as store:
+            assert store.count() == 2               # both listings written
+            assert store.status_counts()["applied"] == 1
+            assert store.by_status("new") == []
+
+    def test_selecting_explains_the_score(self, gui, mixed):
+        gui._show_results(mixed, total_seen=3)
+        item = gui.tree.get_children("")[-1]
+        gui.tree.selection_set(item)
+        gui._on_select()
+        assert "requires Danish" in gui.detail_var.get()

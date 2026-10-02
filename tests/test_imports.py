@@ -26,7 +26,10 @@ MODULES = [
     # correct; importing it is what would be wrong.
     "jobwatch.cli",
     "jobwatch.gui",
+    "jobwatch.dedupe",
+    "jobwatch.language",
     "jobwatch.models",
+    "jobwatch.ranking",
     "jobwatch.report",
     "jobwatch.store",
     "jobwatch.sources",

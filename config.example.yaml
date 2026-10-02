@@ -57,6 +57,52 @@ locations:
   - Danmark
   - Remote
 
+# The languages you can WORK in, and the ones you only get by in. A job that
+# states a requirement for a language outside `fluent` is ranked unviable,
+# basic included: "flydende dansk" against basic Danish is a lottery ticket,
+# not an application. An ad WRITTEN in such a language is ranked a long shot
+# at best, unless it says the working language is English.
+#
+# Codes (da), English names (Danish) or native names (dansk) all work. If this
+# section is missing, the default is exactly what is written here.
+languages:
+  fluent: [en, fr, it, es]
+  basic: [da]
+
+# How vacancies are scored, 0-100, starting from 50. Every adjustment is
+# listed next to the job, so a score can always be checked.
+#   title contains a keyword     +15, +5 per extra keyword (max +25)
+#   keyword only in the tags     -10
+#   boost word anywhere in ad    its points (max +20 in total)
+#   penalise word in the title   its points (max -40 in total)
+#   stated language requirement  -60 and unviable, whatever the score
+#   ad written in a language
+#     you do not work in         -35 and at best a long shot
+#   a language you lack is a plus  -5 if you have basic, else -10
+#   "working language is English"  +5
+#   you already applied / were rejected   -50 and unviable
+#   you skipped it before        -30
+#   posted more than N days ago  -10
+# 55 and up is viable, 30-54 a long shot, below 30 unviable.
+#
+# Seniority is penalised, not excluded: a "Senior" title is sometimes a
+# mid-level role with an inflated label. Lower these if you are senior.
+ranking:
+  boost:
+    playwright: 10
+    pytest: 5
+    python: 5
+  penalise:
+    senior: 10
+    lead: 10
+    principal: 20
+    staff: 15
+    head of: 25
+    director: 25
+    manager: 20
+    architect: 15
+  stale_after_days: 45
+
 # Drop seen-records older than this so the database does not grow forever.
 retain_days: 180
 

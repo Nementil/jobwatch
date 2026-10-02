@@ -65,7 +65,8 @@ class GreenhouseSource(Source):
 
     @property
     def url(self) -> str:
-        return f"https://boards-api.greenhouse.io/v1/boards/{self.slug}/jobs"
+        # content=true adds the ad body, which the language check reads.
+        return f"https://boards-api.greenhouse.io/v1/boards/{self.slug}/jobs?content=true"
 
     def fetch(self) -> str:
         return _fetch_json(self.url, self.rate_limit_seconds)
@@ -96,11 +97,27 @@ class GreenhouseSource(Source):
                         source=self.name,
                         location=location,
                         posted=posted,
+                        # HTML, escaped once more; Job unescapes and strips it.
+                        description=item.get("content", "") or "",
                     )
                 )
             except ValueError:
                 continue
         return jobs
+
+
+def _lever_text(item: dict) -> str:
+    """Lever splits the ad into a description, bullet lists and a closing.
+
+    Requirements (where a language requirement lives) are usually in the
+    lists, so all three parts are joined.
+    """
+    parts = [item.get("descriptionPlain") or item.get("description") or ""]
+    for block in item.get("lists") or []:
+        if isinstance(block, dict):
+            parts += [block.get("text", ""), block.get("content", "")]
+    parts.append(item.get("additionalPlain") or item.get("additional") or "")
+    return "\n".join(p for p in parts if isinstance(p, str) and p)
 
 
 class LeverSource(Source):
@@ -145,6 +162,7 @@ class LeverSource(Source):
                         location=location or "",
                         posted=_epoch_ms_to_date(item.get("createdAt")),
                         tags=(team,) if team else (),
+                        description=_lever_text(item),
                     )
                 )
             except ValueError:

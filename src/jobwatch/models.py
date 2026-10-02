@@ -10,7 +10,9 @@ heavily tested part of the codebase.
 from __future__ import annotations
 
 import hashlib
+import html
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Iterable
@@ -83,6 +85,104 @@ def canonical_url(url: str | None) -> str:
     return f"{base}?{'&'.join(keep)}" if keep else base
 
 
+# Legal-form suffixes stripped from an employer name before two listings are
+# compared. Jobindex publishes "IO Interactive A/S", the studio's own
+# Teamtailor feed publishes "IO Interactive", and both are one employer.
+# Applied repeatedly from the end, so "Paradox Interactive AB (publ)" and
+# "Acme Pty Ltd" lose both parts.
+_LEGAL_SUFFIX = re.compile(
+    r"[\s,]+(?:a/s|aps|i/s|k/s|p/s|amba|a\.m\.b\.a\.?|ab|\(publ\)|publ|asa|as|oy|oyj"
+    r"|ltd\.?|limited|plc|llc|l\.l\.c\.?|inc\.?|incorporated|corp\.?|corporation"
+    r"|gmbh|ag|se|kg|b\.?v\.?|n\.?v\.?|s\.?a\.?|s\.?a\.?s\.?|sarl|s\.?r\.?l\.?"
+    r"|s\.?p\.?a\.?|s\.?l\.?|pty)$"
+)
+
+# Gender markers boards append to titles, in every language this market
+# writes in: "(m/k)" is Danish, "(h/f)" French, "(m/w/d)" German. Only
+# stripped for the vacancy key, never for the fingerprint: changing the
+# fingerprint would re-report every job already in the seen-set.
+_GENDER_MARKER = re.compile(r"\((?:\s*[mfwdxkh]\s*/)+\s*[mfwdxkh]\s*\)|\(all genders\)")
+
+# Letters that Unicode decomposition does not reduce to an ASCII base, so
+# "Søstrene Grene" and "Sostrene Grene" would otherwise stay different.
+_FOLD = str.maketrans({"ø": "o", "æ": "ae", "ß": "ss", "đ": "d", "ł": "l", "œ": "oe"})
+
+_NON_ALNUM = re.compile(r"[^0-9a-z]+")
+_TAG = re.compile(r"<[^>]+>")
+_BLOCK = re.compile(r"<\s*/?\s*(?:br|p|li|ul|ol|div|h[1-6]|tr|td|section|article)\b[^>]*>", re.I)
+# Whitespace except newlines, which normalise_description keeps on purpose.
+_WS_INLINE = re.compile(r"[^\S\n]+")
+
+#: Long enough for a full ad, short enough that a pathological feed cannot
+#: put megabytes into every Job.
+DESCRIPTION_LIMIT = 20_000
+
+
+def fold(value: str | None) -> str:
+    """Lowercased, accent-free ASCII-ish text for comparisons only.
+
+    Never shown to a human: it turns "København" into "kobenhavn".
+    """
+    text = normalise_text(value).casefold().translate(_FOLD)
+    text = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in text if not unicodedata.combining(c))
+
+
+def company_key(value: str | None) -> str:
+    """Employer name reduced to what identifies the employer.
+
+    "IO Interactive A/S", "IO INTERACTIVE" and "IO Interactive" all become
+    "io interactive". Deliberately does not touch words like "Group" or
+    "Studios": "Ubisoft" and "Ubisoft Group" are flagged as a possible
+    duplicate by the dedupe module rather than merged, because a wrong merge
+    hides a job and a missed merge only shows one twice.
+    """
+    text = fold(value)
+    while True:
+        stripped = _LEGAL_SUFFIX.sub("", text).strip()
+        if stripped == text or not stripped:
+            break
+        text = stripped
+    if text.startswith("the "):
+        text = text[4:]
+    return _NON_ALNUM.sub(" ", text).strip()
+
+
+def title_key(value: str | None) -> str:
+    """Job title reduced to its words, for comparing two listings."""
+    text = _GENDER_MARKER.sub(" ", fold(normalise_title(value)))
+    return _NON_ALNUM.sub(" ", text).strip()
+
+
+def vacancy_key(company: str | None, title: str | None) -> str:
+    """Identity of the VACANCY, as opposed to one listing of it.
+
+    Readable on purpose ("io interactive|qa engineer") so a row in the
+    database can be checked by eye.
+    """
+    return f"{company_key(company)}|{title_key(title)}"
+
+
+def normalise_description(value: str | None) -> str:
+    """Plain text from an ad body that may be HTML or escaped HTML.
+
+    Some feeds escape their HTML (Greenhouse sends "&lt;p&gt;"), so the text
+    is unescaped before tags are removed, and again after to turn the
+    remaining entities into characters.
+
+    Block boundaries (paragraphs, list items, line breaks) become newlines
+    rather than spaces. The language check reads the ad clause by clause, and
+    "<li>Fluent English</li><li>Danish is a plus</li>" flattened to one line
+    puts "fluent" next to "Danish".
+    """
+    if not value:
+        return ""
+    text = _BLOCK.sub("\n", html.unescape(value))
+    text = html.unescape(_TAG.sub(" ", text))
+    lines = (_WS_INLINE.sub(" ", line).strip() for line in text.splitlines())
+    return "\n".join(line for line in lines if line)[:DESCRIPTION_LIMIT]
+
+
 @dataclass(frozen=True, slots=True)
 class Job:
     """A single vacancy, normalised at construction time.
@@ -99,6 +199,10 @@ class Job:
     location: str = ""
     posted: date | None = None
     tags: tuple[str, ...] = field(default_factory=tuple)
+    #: The ad text where the source publishes one. Read by the language and
+    #: ranking checks and never part of identity, because boards edit ad text
+    #: on a live posting constantly.
+    description: str = field(default="", compare=False, repr=False)
 
     def __post_init__(self) -> None:
         # object.__setattr__ because the dataclass is frozen.
@@ -108,6 +212,7 @@ class Job:
         object.__setattr__(self, "url", canonical_url(self.url))
         object.__setattr__(self, "source", normalise_text(self.source).lower())
         object.__setattr__(self, "tags", tuple(sorted({normalise_text(t).lower() for t in self.tags if t})))
+        object.__setattr__(self, "description", normalise_description(self.description))
         if not self.title or not self.company:
             raise ValueError(f"Job needs a title and a company, got {self.title!r} / {self.company!r}")
 
@@ -132,6 +237,20 @@ class Job:
         """
         basis = f"{self.company.lower()}|{self.title.lower()}|{self.url}"
         return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+
+    @property
+    def vacancy_key(self) -> str:
+        """Which vacancy this listing advertises, across boards.
+
+        The fingerprint answers "have I seen this LISTING", and has to include
+        the URL to do it. That makes one vacancy on three boards three
+        listings, which is right for the seen-set and wrong for a human, who
+        wants to read it once and apply once. This key leaves the URL out so
+        listings can be grouped. It is a second identity, not a replacement:
+        the fingerprint is what the seen-set stores, and changing it would
+        re-report every job already recorded.
+        """
+        return vacancy_key(self.company, self.title)
 
     def matches(self, keywords: Iterable[str], include_company: bool = False) -> bool:
         """True if any keyword appears in the title or tags.

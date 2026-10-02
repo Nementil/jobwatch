@@ -60,6 +60,23 @@ def _entry_company(entry: Any, fallback: str) -> str:
     return fallback
 
 
+def _entry_description(entry: Any) -> str:
+    """The ad body: Atom `content` when present, else the RSS summary.
+
+    Teamtailor publishes the full ad; Jobindex a teaser. Either is enough
+    for the language check, which is what needs it.
+    """
+    best = ""
+    for item in getattr(entry, "content", None) or []:
+        value = item.get("value", "") if isinstance(item, dict) else ""
+        if len(value) > len(best):
+            best = value
+    summary = getattr(entry, "summary", None)
+    if isinstance(summary, str) and len(summary) > len(best):
+        best = summary
+    return best
+
+
 def split_title_company(title: str) -> tuple[str, str]:
     """Split a "<job title>, <company>" title into its two halves.
 
@@ -143,6 +160,7 @@ class RSSSource(Source):
                         location=normalise_location(entry),
                         posted=_entry_date(entry),
                         tags=tags,
+                        description=_entry_description(entry),
                     )
                 )
             except ValueError:

@@ -91,7 +91,7 @@ class TestGreenhouse:
 
     def test_url_is_built_from_slug(self):
         src = GreenhouseSource("gh", "figma")
-        assert src.url == "https://boards-api.greenhouse.io/v1/boards/figma/jobs"
+        assert src.url == "https://boards-api.greenhouse.io/v1/boards/figma/jobs?content=true"
 
 
 class TestLever:

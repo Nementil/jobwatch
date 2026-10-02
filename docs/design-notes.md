@@ -17,8 +17,8 @@ seen-set so a scheduled run reports only what is genuinely new, and writes a dat
 Markdown digest. There is a small desktop UI for interactive searching.
 
 ```
-pytest              106 passed in 0.17s     offline: no network, no browser
-pytest -m gui        13 passed in 0.81s     needs a Tk display
+pytest              314 passed in 0.71s     offline: no network, no browser
+pytest -m gui        28 passed in 1.30s     needs a Tk display
 pytest -m live        3 passed in 13.2s     hits real boards
 ```
 
@@ -44,7 +44,7 @@ class Source(ABC):
             log.exception("%s: parse failed", self.name); return []
 ```
 
-That split is why 106 tests run in 0.17 seconds with no network. The logic most likely to
+That split is why 314 tests run in well under a second with no network. The logic most likely to
 be wrong, interpreting somebody else's payload, is tested against saved fixtures in
 milliseconds, and fails only when the code is wrong.
 
@@ -94,6 +94,52 @@ a page is otherwise two different strings:
 That last one is a judgement call worth recording: `gh_jid` is stripped because every
 Greenhouse URL already carries the same id as a path segment, so it is redundant. A
 parameter that was the *sole* identifier must never be added to that list.
+
+### A listing is not a vacancy
+
+The fingerprint includes the URL, and has to: the seen-set's question is "have I
+seen this listing". That makes one vacancy on Jobindex, It-jobbank and the studio's
+own feed three listings, which is right for the seen-set and wrong for a person, who
+wants to read it once and apply once.
+
+So there is a second identity, `Job.vacancy_key`: employer and title with the
+decoration removed (`A/S`, `AB (publ)`, `(m/k)`, accents, case) and **without** the
+URL. It groups listings for display, carries a status across every listing of a
+vacancy, and is what the response rate counts. It does not replace the fingerprint;
+changing the fingerprint would re-report everything already recorded.
+
+The merge rule is strict and everything looser is only a flag. Titles that are
+merely similar ("QA Engineer" and "QA Engineer - Copenhagen") are reported as a
+possible duplicate and kept apart, and titles that differ only by seniority are not
+even flagged. The asymmetry is the same one as everywhere else in this tool: a wrong
+merge hides a vacancy behind another one, a missed merge shows one job twice.
+
+A database from before this change is backfilled once, tracked in SQLite's
+`user_version`. Where two old listings of one vacancy disagreed (one marked applied,
+the other left new), the vacancy takes the status most recently set.
+
+## Ranking: the language requirement decides first
+
+In this market the language requirement decides more applications than the skills
+do, and it is almost never in the title, so no keyword filter can see it.
+`language.py` reads it two ways: as **stated** ("fluent Danish is required", "du
+taler og skriver dansk", "svenska i tal och skrift"), and as **implied** by the
+language the ad is written in. A stated requirement you cannot meet makes a vacancy
+unviable whatever else it scores; an implied one caps it at a long shot, because it
+is an inference.
+
+The stated half works clause by clause. Each mention of a language takes the
+verdict of the *nearest* cue in its clause, so "Fluent in Danish, English is a plus"
+gives two different answers for two languages. Phrases that negate ("not a
+requirement") are masked out before requirement words are looked for, so the word
+"requirement" inside them cannot count. A language name followed by a noun ("a
+Danish company", "Danish Crown") is a nationality and is ignored. The ad-language
+half counts function words that belong to exactly one language, computed at import
+by dropping every word two languages share.
+
+Ranking never filters. An unviable vacancy is still listed, last, with the reason.
+The checks are heuristics and will be wrong sometimes, and a ranking that hides its
+losers can never be checked.
 
 ---
 
