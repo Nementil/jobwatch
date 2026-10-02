@@ -46,7 +46,7 @@ want different fixes. `skipped` is tracked separately for the same reason: "I
 never saw it" and "I saw it and judged it wrong" are different facts.
 
 ```
-pytest              390 passed in 1.06s     offline: no network, no browser
+pytest              402 passed in 1.00s     offline: no network, no browser
 pytest -m gui        28 passed in 1.30s     needs a Tk display
 pytest -m live        3 passed in 13.2s     hits real boards
 ```
@@ -114,6 +114,19 @@ It is all heuristic, and it never hides anything: unviable jobs are listed last 
 greyed in the GUI, with a *Hide unviable* toggle that is off by default. Weights,
 boost words and seniority penalties are in the `ranking:` section of the config.
 
+## Configuration
+
+`config.yaml` holds the search; `config.private.yaml`, if present, is merged on top
+and is gitignored. A source a site allowed you personally to read, its cookie file,
+and notes naming people go in the private file, so the rest can be shared or
+published without editing anything out. Private sources merge by `name`, and
+`keywords+:` / `locations+:` append rather than replace
+(`config.private.example.yaml`).
+
+A source can carry its own `locations:`, which replaces the global list for that
+source's jobs only. That is how "Stockholm, but only for game studios" is written:
+Stockholm in the studio feeds' lists, not in the global one.
+
 ## Sources
 
 | Kind | How | Reach |
@@ -167,7 +180,7 @@ three separately-marked tests whose only job is to notice that a board changed i
 markup, and the parsing logic they guard is covered offline against saved fixtures.
 
 ```bash
-pytest              # 390 offline tests, no network, no browser
+pytest              # 402 offline tests, no network, no browser
 pytest -m gui       # tkinter tests, needs a display
 pytest -m live      # contract checks against the real boards
 ```
@@ -250,6 +263,7 @@ src/jobwatch/
   report.py          pure rendering by tier, no IO
   cli.py             argparse entry point
   gui.py             tkinter UI, worker thread + Queue
+  config.py          config.yaml + private overlay, per-source filtering
   capture.py         save real ads, read labels back, audit
   probe.py           render a page, rank candidate card selectors
   sources/

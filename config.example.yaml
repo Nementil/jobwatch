@@ -2,6 +2,11 @@
 #
 # Copy to config.yaml and edit. config.yaml is gitignored so your personal
 # search terms are not published along with the code.
+#
+# Anything that must stay private even from a backup or a shared copy of
+# this file (a source a site allowed YOU to read, its cookie file, notes
+# naming people) goes in config.private.yaml instead, which is merged on top
+# of this one. See config.private.example.yaml.
 
 # Substring match against job title and tags. Case-insensitive.
 #
@@ -36,6 +41,13 @@ exclude_keywords:
   - kvalitetschef
   - regulatory affairs
   - laegemiddel          # Danish: pharmaceutical
+  # Seen in a real run: "QA Supply Specialist till life science bolag" is
+  # pharma supply-chain QA, not software testing.
+  - life science
+  - supply specialist
+  # Seniority: excluding drops the job; the `ranking: penalise:` list below
+  # keeps it visible with fewer points. Use one or the other per word.
+  # - senior
 
 # Matched against the employer name only, as a substring, so "Ferring"
 # catches "Ferring Pharmaceuticals A/S".
@@ -192,6 +204,11 @@ sources:
     url: https://sharkmob.teamtailor.com/jobs.rss
     company: Sharkmob
     enabled: true
+    # A source's own `locations:` replaces the global list for its jobs only.
+    # Use it for "this city, but only for these employers": a studio feed can
+    # accept Stockholm while the general boards above do not. An empty list
+    # means anywhere, for this source.
+    # locations: [Malmö, Malmo, Stockholm]
 
   # Avalanche Studios (Stockholm + Malmo): careers page is client-rendered and
   # does not name its ATS. Open avalanchestudios.com/careers, click a job, and

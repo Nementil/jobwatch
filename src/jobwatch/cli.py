@@ -18,8 +18,9 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import yaml
 
+from .config import attach_locations, collect_matching
+from .config import load as load_config
 from .models import Job
 from .ranking import RankingSettings, rank_jobs
 from .report import render_console, render_markdown
@@ -54,6 +55,7 @@ def build_sources(config: dict) -> list[Source]:
         if not entry.get("enabled", True):
             continue
         kind = entry.get("type", "rss")
+        built = len(sources)
         try:
             if kind == "rss":
                 sources.append(
@@ -95,6 +97,8 @@ def build_sources(config: dict) -> list[Source]:
                 )
             else:
                 log.warning("unknown source type %r for %r, skipping", kind, entry.get("name"))
+            if built < len(sources):
+                attach_locations(sources[-1], entry)
         except KeyError as exc:
             hint = ""
             if kind in ATS_TYPES and str(exc).strip("'") == "slug":
@@ -105,25 +109,15 @@ def build_sources(config: dict) -> list[Source]:
 
 
 def run(config: dict, db_path: str, dry: bool) -> int:
-    keywords = config.get("keywords", [])
-    locations = config.get("locations", [])
-    exclude_keywords = config.get("exclude_keywords", [])
-    exclude_companies = config.get("exclude_companies", [])
     retain_days = int(config.get("retain_days", 180))
 
-    collected: list[Job] = []
-    for source in build_sources(config):
-        collected.extend(source.collect())
-
-    log.info("collected %d jobs before filtering", len(collected))
-    matched = filter_jobs(
-        collected, keywords, locations, exclude_keywords, exclude_companies
-    )
+    matched, collected = collect_matching(config)
+    log.info("collected %d jobs before filtering", collected)
     # Both numbers, always. "27 matched" alone cannot tell a working filter
     # from one that excluded the entire market, and those look identical in a
     # quiet week.
     log.info(
-        "%d matched (%d dropped by filters)", len(matched), len(collected) - len(matched)
+        "%d matched (%d dropped by filters)", len(matched), collected - len(matched)
     )
 
     settings = RankingSettings.from_config(config)
@@ -149,24 +143,13 @@ def run(config: dict, db_path: str, dry: bool) -> int:
     return 0
 
 
-def collect_matching(config: dict) -> list[Job]:
-    """Every source, filtered by the config. No store access."""
-    collected: list[Job] = []
-    for source in build_sources(config):
-        collected.extend(source.collect())
-    return filter_jobs(
-        collected, config.get("keywords", []), config.get("locations", []),
-        config.get("exclude_keywords", []), config.get("exclude_companies", []),
-    )
-
-
 def capture(config: dict, out: str) -> int:
     """Save every matching ad for labelling. See capture.py."""
     from . import capture as cap
     from .dedupe import group_listings
     from .language import LanguageProfile
 
-    vacancies = group_listings(collect_matching(config))
+    vacancies = group_listings(collect_matching(config)[0])
     written, existing = cap.save(vacancies, Path(out), LanguageProfile.from_config(config))
     print(f"{written} ad(s) written to {out}/, {existing} already there (left untouched).")
     if written:
@@ -374,7 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     if not config_path.exists():
         log.error("config not found: %s (copy config.example.yaml)", config_path)
         return 2
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    config = load_config(config_path)
     if args.command == "capture":
         return capture(config, args.out)
     if args.command == "audit":

@@ -27,6 +27,7 @@ MODULES = [
     "jobwatch.cli",
     "jobwatch.gui",
     "jobwatch.capture",
+    "jobwatch.config",
     "jobwatch.dedupe",
     "jobwatch.language",
     "jobwatch.models",

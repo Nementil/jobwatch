@@ -23,3 +23,8 @@ ads/
 
 # Pages saved by `jobwatch probe`.
 probe/
+
+# Private overlay: sources and notes that must not be published.
+config.private.yaml
+# Browser consent state (cookies). Never commit.
+.jobwatch/

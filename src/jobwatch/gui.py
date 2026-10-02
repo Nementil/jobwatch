@@ -36,12 +36,12 @@ from typing import Any
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-import yaml
 
 from .models import Job
 from .ranking import UNVIABLE, Ranked, RankingSettings, rank_jobs
 from .report import render_markdown
-from .sources import filter_jobs
+from .config import collect_matching
+from .config import load as load_config
 from .store import STATUSES, JobStore
 
 log = logging.getLogger(__name__)
@@ -212,7 +212,7 @@ class JobWatchGUI:
             self.status_text.set(f"No {self.config_path}. Copy config.example.yaml first.")
             self.run_btn.state(["disabled"])
             return
-        self.config = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
+        self.config = load_config(self.config_path)
         self.keywords_var.set(", ".join(self.config.get("keywords", [])))
         self.locations_var.set(", ".join(self.config.get("locations", [])))
         enabled = [s for s in self.config.get("sources", []) if s.get("enabled", True)]
@@ -245,22 +245,14 @@ class JobWatchGUI:
     def _worker(self, config: dict, keywords: list[str], locations: list[str], new_only: bool) -> None:
         """Runs off the UI thread. Must never touch a widget."""
         try:
-            from .cli import build_sources
-
-            collected: list[Job] = []
-            for source in build_sources(config):
-                collected.extend(source.collect())
-            # The exclusions come from config, as in `jobwatch run`. They were
-            # missing here, so the GUI showed the pharma QA roles that the
-            # exclusion list exists to drop.
-            matched = filter_jobs(
-                collected, keywords, locations,
-                config.get("exclude_keywords", []), config.get("exclude_companies", []),
-            )
+            # Same collection as `jobwatch run`, including each source's own
+            # `locations:` rule, with the search boxes as the defaults.
+            matched, collected = collect_matching(config, keywords=keywords,
+                                                  locations=locations)
             if new_only:
                 with JobStore(self.db_path) as store:
                     matched = store.new_jobs(matched)
-            self.queue.put(("done", matched, len(collected)))
+            self.queue.put(("done", matched, collected))
         except Exception as exc:            # noqa: BLE001 - reported to the user
             log.exception("search failed")
             self.queue.put(("error", exc, 0))

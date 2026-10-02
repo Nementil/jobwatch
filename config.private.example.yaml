@@ -1,0 +1,23 @@
+# config.private.yaml: merged on top of config.yaml, and gitignored.
+#
+# Copy to config.private.yaml. Put here what must not be published: a source
+# a site allowed you personally to read, the cookie/consent file that goes
+# with it, notes naming the person who said yes.
+#
+# Merge rules:
+#   sources   merged by `name`. A new name adds a source; an existing name
+#             overrides that source's keys, so a public entry that ships
+#             `enabled: false` can be switched on here.
+#   key+:     appends to a list instead of replacing it (keywords+, locations+).
+#   anything else replaces the value from config.yaml.
+
+# keywords+:
+#   - a private search term
+
+# sources:
+#   - name: some-board
+#     type: browser
+#     url: https://example.com/jobs?search=QA
+#     card_selector: '.job-card'
+#     # Why this is allowed, and who allowed it, belongs here and nowhere public.
+#     enabled: true
