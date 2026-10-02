@@ -25,3 +25,9 @@ def test_probe_saves_the_page_and_finds_the_cards(tmp_path):
     assert (tmp_path / "page.png").stat().st_size > 0
     assert candidates, "the fixture's script-built cards should be found"
     assert "job-card" in candidates[0].selector
+
+
+def test_probe_previews_what_the_source_would_extract(tmp_path):
+    top = probe(FIXTURE.resolve().as_uri(), tmp_path, wait_ms=500)[0]
+    assert top.usable >= 2
+    assert top.preview[0][0] == "QA Automation Engineer"

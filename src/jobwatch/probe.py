@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 from .sources.base import USER_AGENT
-from .sources.browser import robots_allows
+from .sources.browser import JobBoardPage, listings_to_jobs, robots_allows
 
 # Runs in the page. For every element with a class, record the tag, the
 # class list, whether it contains a link, and a little of its text.
@@ -44,6 +44,10 @@ class Candidate:
     selector: str
     count: int
     sample: str
+    #: What BrowserSource would extract with this selector: (title, company,
+    #: location) for the first few cards, and how many became valid jobs.
+    preview: tuple[tuple[str, str, str], ...] = ()
+    usable: int = 0
 
     @property
     def line(self) -> str:
@@ -91,6 +95,17 @@ def probe(url: str, out: Path, wait_ms: int = 4000) -> list[Candidate]:
             (out / "page.html").write_text(page.content(), encoding="utf-8")
             page.screenshot(path=str(out / "page.png"), full_page=True)
             elements = page.evaluate(_COLLECT)
+            ranked = rank_candidates(elements)
+            # Run the real extraction for the top candidates, so a selector
+            # that matches cards but yields no company (and so no jobs) shows
+            # up here rather than as "parsed 0 jobs" on the next run.
+            previewed = []
+            for c in ranked[:3]:
+                rows = JobBoardPage(page, c.selector).extract()
+                usable = len(listings_to_jobs(rows, "probe"))
+                preview = tuple((r.title, r.company, r.location) for r in rows[:3])
+                previewed.append(Candidate(c.selector, c.count, c.sample, preview, usable))
+            ranked = previewed + ranked[3:]
         finally:
             browser.close()
-    return rank_candidates(elements)
+    return ranked

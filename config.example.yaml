@@ -288,6 +288,7 @@ sources:
   #   jobs.ashbyhq.com/<slug>              ->  type: ashby
   #   apply.workable.com/<slug>/           ->  type: workable
   #   jobs.smartrecruiters.com/<slug>/...  ->  type: smartrecruiters
+  #       (city: / country: narrow a group account, e.g. slug: Ubisoft2, city: Malmö)
   #   boards.greenhouse.io/<slug>          ->  type: greenhouse
   #   jobs.lever.co/<slug>                 ->  type: lever
   #   <slug>.breezy.hr                     ->  type: breezy

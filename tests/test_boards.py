@@ -363,3 +363,11 @@ class TestJobTechFilters:
 
     def test_unknown_options_are_not_sent(self):
         assert "colour" not in JobTechSource("p", "qa", colour="blue").url
+
+
+class TestSmartRecruitersFilters:
+    def test_city_narrows_a_group_account(self):
+        [src] = build_sources({"sources": [{"name": "massive", "type": "smartrecruiters",
+                                            "slug": "Ubisoft2", "city": "Malmö"}]})
+        assert src.url == ("https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings"
+                           "?limit=100&city=Malm%C3%B6")

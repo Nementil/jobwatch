@@ -276,14 +276,22 @@ class SmartRecruitersSource(Source):
     title for these.
     """
 
-    def __init__(self, name: str, slug: str, company: str = "") -> None:
+    def __init__(self, name: str, slug: str, company: str = "", city: str = "",
+                 country: str = "", query: str = "") -> None:
         self.name = name
         self.slug = slug
         self.company = company
+        # One SmartRecruiters company can be a whole group: Ubisoft's studios
+        # all post as "Ubisoft2", so Massive is `city: Malmö`.
+        self.filters = {"city": city, "country": country, "q": query}
 
     @property
     def url(self) -> str:
-        return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?limit=100"
+        import urllib.parse
+
+        params = {"limit": 100, **{k: v for k, v in self.filters.items() if v}}
+        return (f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?"
+                + urllib.parse.urlencode(params))
 
     def fetch(self) -> str:
         return _fetch_json(self.url, self.rate_limit_seconds)

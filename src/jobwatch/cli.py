@@ -76,11 +76,15 @@ def build_sources(config: dict) -> list[Source]:
                     )
                 )
             elif kind in ATS_TYPES:
+                extra = {}
+                if kind == "smartrecruiters":
+                    extra = {k: entry[k] for k in ("city", "country", "query") if entry.get(k)}
                 sources.append(
                     ATS_TYPES[kind](
                         name=entry["name"],
                         slug=entry["slug"],
                         company=entry.get("company", ""),
+                        **extra,
                     )
                 )
             elif kind in BOARD_TYPES:
@@ -335,6 +339,11 @@ def main(argv: list[str] | None = None) -> int:
         print("card selector candidates (matches, selector, first match):")
         for c in candidates:
             print("  " + c.line)
+            if c.preview:
+                print(f"        -> {c.usable}/{c.count} usable as jobs; first cards read as:")
+                for title, company, location in c.preview:
+                    print(f"           title={title[:40]!r} company={company[:25]!r} "
+                          f"location={location[:20]!r}")
         if not candidates:
             print("  none: the page may need longer to render, or a login")
         return 0
