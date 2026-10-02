@@ -321,3 +321,33 @@ class TestWorkWithIndies:
             (Path(__file__).resolve().parents[1] / "config.example.yaml").read_text("utf-8"))
         [entry] = [s for s in config["sources"] if s["name"] == "workwithindies"]
         assert entry["title_pattern"] == WWI_PATTERN
+
+
+class TestBreezy:
+    PAYLOAD = json.dumps([
+        {"id": "a1", "friendly_id": "qa-tester", "name": "QA Tester",
+         "url": "https://playdead.breezy.hr/p/a1-qa-tester", "published_date": "2026-09-20T10:00:00.000Z",
+         "type": {"name": "Full-Time"}, "department": "QA",
+         "location": {"name": "Copenhagen, DK", "is_remote": False}},
+        {"id": "b2", "friendly_id": "x", "name": "Remote Artist",
+         "location": {"city": "Remote", "country": {"name": "Denmark"}, "is_remote": True}},
+        {"id": "c3", "name": ""},
+    ])
+
+    def test_parses(self):
+        from jobwatch.sources import BreezySource
+
+        jobs = BreezySource("playdead", "playdead", company="Playdead").parse(self.PAYLOAD)
+        assert [j.title for j in jobs] == ["QA Tester", "Remote Artist"]
+        assert jobs[0].location == "Copenhagen, DK"
+        assert jobs[1].location == "Remote (Remote, Denmark)"
+        assert jobs[1].url == "https://playdead.breezy.hr/p/x"
+        assert "qa" in jobs[0].tags
+
+    def test_built_from_config(self):
+        [src] = build_sources({"sources": [{"name": "p", "type": "breezy", "slug": "playdead"}]})
+        assert src.url == "https://playdead.breezy.hr/json"
+
+    def test_missing_slug_says_what_to_add(self, caplog):
+        assert build_sources({"sources": [{"name": "n", "type": "smartrecruiters"}]}) == []
+        assert "needs `slug:`" in caplog.text

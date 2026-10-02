@@ -23,7 +23,7 @@ import yaml
 from .models import Job
 from .ranking import RankingSettings, rank_jobs
 from .report import render_console, render_markdown
-from .sources import (ArbeitnowSource, AshbySource, BrowserSource, GreenhouseSource,
+from .sources import (ArbeitnowSource, AshbySource, BreezySource, BrowserSource, GreenhouseSource,
                       HimalayasSource, JobicySource, JobTechSource, LeverSource,
                       RemoteOKSource, RemotiveSource, RSSSource, SmartRecruitersSource,
                       Source, WorkableSource, filter_jobs)
@@ -36,6 +36,7 @@ log = logging.getLogger("jobwatch")
 ATS_TYPES = {
     "greenhouse": GreenhouseSource, "lever": LeverSource, "ashby": AshbySource,
     "workable": WorkableSource, "smartrecruiters": SmartRecruitersSource,
+    "breezy": BreezySource,
 }
 
 #: Multi-employer boards with an official keyless API. Extra config keys
@@ -91,7 +92,11 @@ def build_sources(config: dict) -> list[Source]:
             else:
                 log.warning("unknown source type %r for %r, skipping", kind, entry.get("name"))
         except KeyError as exc:
-            log.error("source %r missing required key %s, skipping", entry.get("name"), exc)
+            hint = ""
+            if kind in ATS_TYPES and str(exc).strip("'") == "slug":
+                hint = (f" ({kind} needs `slug:`, the company's name in its careers URL; "
+                        "see the ATS list in config.example.yaml)")
+            log.error("source %r missing required key %s, skipping%s", entry.get("name"), exc, hint)
     return sources
 
 

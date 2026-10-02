@@ -290,6 +290,7 @@ sources:
   #   jobs.smartrecruiters.com/<slug>/...  ->  type: smartrecruiters
   #   boards.greenhouse.io/<slug>          ->  type: greenhouse
   #   jobs.lever.co/<slug>                 ->  type: lever
+  #   <slug>.breezy.hr                     ->  type: breezy
   #   <slug>.teamtailor.com                ->  type: rss, url .../jobs.rss
   # - name: some-studio
   #   type: ashby

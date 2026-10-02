@@ -311,3 +311,55 @@ class SmartRecruitersSource(Source):
             except ValueError:
                 continue
         return jobs
+
+
+class BreezySource(Source):
+    """Breezy HR public careers feed.
+
+        https://<slug>.breezy.hr/json
+
+    The slug is the subdomain of the careers page (playdead.breezy.hr). The
+    feed is the one the careers page itself renders from, and carries no
+    description, so the language check sees only the title.
+    """
+
+    def __init__(self, name: str, slug: str, company: str = "") -> None:
+        self.name = name
+        self.slug = slug
+        self.company = company or slug
+
+    @property
+    def url(self) -> str:
+        return f"https://{self.slug}.breezy.hr/json"
+
+    def fetch(self) -> str:
+        return _fetch_json(self.url, self.rate_limit_seconds)
+
+    def parse(self, payload: str) -> list[Job]:
+        from .boards import parse_date
+
+        data = json.loads(payload)
+        jobs: list[Job] = []
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict):
+                continue
+            loc = item.get("location") or {}
+            country = loc.get("country") or {}
+            country = country.get("name", "") if isinstance(country, dict) else str(country)
+            place = loc.get("name") or ", ".join(p for p in (loc.get("city"), country) if p)
+            if loc.get("is_remote"):
+                place = f"Remote ({place})" if place else "Remote"
+            kind = item.get("type") or {}
+            try:
+                jobs.append(Job(
+                    title=item.get("name", ""),
+                    company=(item.get("company") or {}).get("name") or self.company,
+                    url=item.get("url", "") or f"https://{self.slug}.breezy.hr/p/{item.get('friendly_id', '')}",
+                    source=self.name, location=place,
+                    posted=parse_date(item.get("published_date")),
+                    tags=tuple(t for t in (item.get("department"),
+                                           kind.get("name") if isinstance(kind, dict) else kind) if t),
+                ))
+            except ValueError:
+                continue
+        return jobs

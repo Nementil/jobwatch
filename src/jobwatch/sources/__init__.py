@@ -1,4 +1,4 @@
-from .ats import (AshbySource, GreenhouseSource, LeverSource, SmartRecruitersSource,
+from .ats import (AshbySource, BreezySource, GreenhouseSource, LeverSource, SmartRecruitersSource,
                   WorkableSource)
 from .base import Source, filter_jobs
 from .boards import (ArbeitnowSource, HimalayasSource, JobicySource, JobTechSource,
@@ -10,6 +10,6 @@ __all__ = [
     "Source", "filter_jobs", "RSSSource", "split_title_company",
     "BrowserSource", "JobBoardPage", "RawListing", "listings_to_jobs",
     "GreenhouseSource", "LeverSource", "AshbySource", "WorkableSource",
-    "SmartRecruitersSource", "RemotiveSource", "RemoteOKSource", "JobicySource",
+    "SmartRecruitersSource", "BreezySource", "RemotiveSource", "RemoteOKSource", "JobicySource",
     "HimalayasSource", "ArbeitnowSource", "JobTechSource",
 ]

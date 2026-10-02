@@ -202,10 +202,10 @@ was not needed.
 
 ## Why the tests look like that
 
-384 offline tests by default, plus 28 GUI tests deselected unless you ask for
+387 offline tests by default, plus 28 GUI tests deselected unless you ask for
 them (`pytest -m gui`), plus separately-marked browser and live ones.
 
-The 384 is pytest's count, not a count of `def test_` lines: the model,
+The 387 is pytest's count, not a count of `def test_` lines: the model,
 source and language tests are heavily parametrized, so one definition often
 expands to several cases. If anyone asks why the number does not match the
 file, that is why, and pytest's number is the correct one.

@@ -46,7 +46,7 @@ want different fixes. `skipped` is tracked separately for the same reason: "I
 never saw it" and "I saw it and judged it wrong" are different facts.
 
 ```
-pytest              384 passed in 0.75s     offline: no network, no browser
+pytest              387 passed in 1.19s     offline: no network, no browser
 pytest -m gui        28 passed in 1.30s     needs a Tk display
 pytest -m live        3 passed in 13.2s     hits real boards
 ```
@@ -121,7 +121,7 @@ boost words and seniority penalties are in the `ranking:` section of the config.
 | Danish aggregators | RSS | `jobindex.dk` and `it-jobbank.dk`, arbitrary queries each |
 | Swedish public job board | JobTech JSON (CC0 open data) | every ad on Arbetsförmedlingen's Platsbanken |
 | Remote boards | Remotive, Remote OK, Jobicy, Himalayas, Arbeitnow JSON; We Work Remotely RSS | remote jobs worldwide, restriction kept in the location |
-| Employer job boards | Teamtailor RSS; Greenhouse, Lever, Ashby, Workable, SmartRecruiters JSON | any company using one, which is most studios |
+| Employer job boards | Teamtailor RSS; Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Breezy JSON | any company using one, which is most studios |
 | Games boards | Work With Indies RSS; gamesjobsdirect via Playwright | indie and studio roles, many remote |
 | Client-rendered boards | Playwright, robots.txt obeyed on every fetch | anything else, opt in only |
 
@@ -167,7 +167,7 @@ three separately-marked tests whose only job is to notice that a board changed i
 markup, and the parsing logic they guard is covered offline against saved fixtures.
 
 ```bash
-pytest              # 384 offline tests, no network, no browser
+pytest              # 387 offline tests, no network, no browser
 pytest -m gui       # tkinter tests, needs a display
 pytest -m live      # contract checks against the real boards
 ```
