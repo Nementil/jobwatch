@@ -351,3 +351,15 @@ class TestBreezy:
     def test_missing_slug_says_what_to_add(self, caplog):
         assert build_sources({"sources": [{"name": "n", "type": "smartrecruiters"}]}) == []
         assert "needs `slug:`" in caplog.text
+
+
+class TestJobTechFilters:
+    def test_region_and_municipality_reach_the_url(self):
+        src = JobTechSource("p", "testare", region="CaRE_1nn_cSU",
+                            municipality=["oYPt_yRA_Smm", "muSY_tsR_vDZ"], remote=True)
+        assert src.url == (
+            "https://jobsearch.api.jobtechdev.se/search?q=testare&limit=100"
+            "&region=CaRE_1nn_cSU&municipality=oYPt_yRA_Smm&municipality=muSY_tsR_vDZ&remote=true")
+
+    def test_unknown_options_are_not_sent(self):
+        assert "colour" not in JobTechSource("p", "qa", colour="blue").url

@@ -248,9 +248,24 @@ class JobTechSource(JSONBoardSource):
     for exactly this use. `query` is free text ("testare", "QA").
     """
 
+    #: JobSearch filters passed through from config as-is: `region` and
+    #: `municipality` take Arbetsförmedlingen taxonomy concept ids (look
+    #: them up at https://jobsearch.api.jobtechdev.se, "taxonomy"), and
+    #: `remote: true` keeps remote ads only. A list value
+    #: becomes a repeated parameter, which the API reads as "any of".
+    FILTERS = ("region", "municipality", "country", "occupation-field",
+               "occupation-group", "occupation-name", "remote", "employer")
+
     @property
     def url(self) -> str:
-        q = self._q(q=self.query, limit=self.options.get("limit", 100))
+        params: list[tuple[str, object]] = [("q", self.query), ("limit", self.options.get("limit", 100))]
+        for key in self.FILTERS:
+            value = self.options.get(key, self.options.get(key.replace("-", "_")))
+            if value in (None, ""):
+                continue
+            for v in value if isinstance(value, (list, tuple)) else [value]:
+                params.append((key, str(v).lower() if isinstance(v, bool) else v))
+        q = urllib.parse.urlencode([(k, v) for k, v in params if v not in (None, "")])
         return f"https://jobsearch.api.jobtechdev.se/search?{q}"
 
     def items(self, data: Any) -> list[dict]:
