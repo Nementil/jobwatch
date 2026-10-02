@@ -11,6 +11,7 @@ is why the Danish market is reachable here without scraping anything.
 
 from __future__ import annotations
 
+import re
 import time
 import urllib.request
 from datetime import date
@@ -77,6 +78,33 @@ def _entry_description(entry: Any) -> str:
     return best
 
 
+_BRACKET_TAGS = re.compile(r"Tags:\s*((?:\[[^\]]+\]\s*)+)\s*$")
+
+
+def _bracket_tags(summary: str) -> tuple[str, ...]:
+    """"... Tags: [QA & CS] [Full Time]" at the end of a summary, as tags."""
+    match = _BRACKET_TAGS.search(summary.strip()) if isinstance(summary, str) else None
+    return tuple(re.findall(r"\[([^\]]+)\]", match.group(1))) if match else ()
+
+
+# A "where" that is not a place: "Anywhere", "CET ± 2 hours", "Europe",
+# "San Francisco, CA or Remote". Marked remote so the location filter keeps
+# it when "Remote" is configured, and the ranking can weigh the restriction.
+_NOT_A_PLACE = re.compile(
+    r"anywhere|remote|±|\butc|\bgmt|\b[a-z]?[ecmp][sd]?t\b|europe|america|latam|asia|pacific|emea",
+    re.I,
+)
+
+
+def _place_or_remote(where: str) -> str:
+    where = normalise_text(where)
+    if not where:
+        return ""
+    if where.lower() == "anywhere":
+        return "Remote (Worldwide)"
+    return f"Remote ({where})" if _NOT_A_PLACE.search(where) else where
+
+
 def split_title_company(title: str) -> tuple[str, str]:
     """Split a "<job title>, <company>" title into its two halves.
 
@@ -119,6 +147,7 @@ class RSSSource(Source):
         default_company: str = "",
         company_in_title: bool = False,
         company_before_colon: bool = False,
+        title_pattern: str = "",
     ) -> None:
         self.name = name
         self.url = url
@@ -126,6 +155,10 @@ class RSSSource(Source):
         self.company_in_title = company_in_title
         #: We Work Remotely titles read "Company: Job title".
         self.company_before_colon = company_before_colon
+        #: A regex with named groups `company`, `title` and optionally
+        #: `location`, for feeds that write a sentence instead of a title.
+        #: Work With Indies: "<company> is hiring a <title> to work from <where>".
+        self.title_pattern = re.compile(title_pattern) if title_pattern else None
 
     def fetch(self) -> str:
         request = urllib.request.Request(self.url, headers={"User-Agent": USER_AGENT})
@@ -145,10 +178,16 @@ class RSSSource(Source):
             tags = tuple(
                 t.get("term", "") for t in (getattr(entry, "tags", None) or [])
                 if isinstance(t, dict) and t.get("term")
-            )
+            ) + _bracket_tags(getattr(entry, "summary", "") or "")
 
             company = ""
-            if self.company_before_colon and ": " in title:
+            location = ""
+            match = self.title_pattern.fullmatch(title.strip()) if self.title_pattern else None
+            if match:
+                parts = match.groupdict()
+                company, title = parts.get("company") or "", parts.get("title") or title
+                location = _place_or_remote(parts.get("location") or "")
+            elif self.company_before_colon and ": " in title:
                 company, _, title = title.partition(": ")
             elif self.company_in_title:
                 title, company = split_title_company(title)
@@ -162,7 +201,7 @@ class RSSSource(Source):
                         company=company,
                         url=link,
                         source=self.name,
-                        location=normalise_location(entry),
+                        location=location or normalise_location(entry),
                         posted=_entry_date(entry),
                         tags=tags,
                         description=_entry_description(entry),

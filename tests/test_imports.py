@@ -30,6 +30,7 @@ MODULES = [
     "jobwatch.dedupe",
     "jobwatch.language",
     "jobwatch.models",
+    "jobwatch.probe",
     "jobwatch.ranking",
     "jobwatch.report",
     "jobwatch.store",

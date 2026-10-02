@@ -15,6 +15,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import urllib.robotparser
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
@@ -25,6 +29,37 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from playwright.sync_api import Page
 
 log = logging.getLogger(__name__)
+
+
+def robots_allows_text(robots_txt: str, url: str, user_agent: str = USER_AGENT) -> bool:
+    """Whether `robots_txt` lets `user_agent` fetch `url`. Pure, for tests."""
+    parser = urllib.robotparser.RobotFileParser()
+    parser.parse(robots_txt.splitlines())
+    return parser.can_fetch(user_agent, url)
+
+
+def robots_allows(url: str, user_agent: str = USER_AGENT) -> bool:
+    """Read the site's robots.txt and ask it. A missing file allows everything.
+
+    An unreachable robots.txt is treated as a refusal, not a pass: when the
+    rule cannot be read, the conservative reading is the only defensible one
+    for an unattended scraper.
+    """
+    parts = urllib.parse.urlsplit(url)
+    robots_url = f"{parts.scheme}://{parts.netloc}/robots.txt"
+    request = urllib.request.Request(robots_url, headers={"User-Agent": user_agent})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            text = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code in (404, 410):
+            return True
+        log.warning("robots.txt at %s answered %s; not fetching", robots_url, exc.code)
+        return False
+    except Exception as exc:                       # noqa: BLE001
+        log.warning("could not read %s (%s); not fetching", robots_url, exc)
+        return False
+    return robots_allows_text(text, url, user_agent)
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +192,13 @@ class BrowserSource(Source):
         which is exactly how the offline tests for this source work.
         """
         from playwright.sync_api import sync_playwright
+
+        # Not optional and not configurable. A browser source exists for
+        # sites that publish no feed, which are exactly the sites most likely
+        # to say in robots.txt that they do not want to be read by a bot.
+        if self.url.startswith(("http://", "https://")) and not robots_allows(self.url):
+            log.warning("%s: robots.txt disallows %s; skipped", self.name, self.url)
+            return "[]"
 
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=self.headless)

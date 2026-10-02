@@ -17,7 +17,7 @@ seen-set so a scheduled run reports only what is genuinely new, and writes a dat
 Markdown digest. There is a small desktop UI for interactive searching.
 
 ```
-pytest              365 passed in 1.00s     offline: no network, no browser
+pytest              384 passed in 0.75s     offline: no network, no browser
 pytest -m gui        28 passed in 1.30s     needs a Tk display
 pytest -m live        3 passed in 13.2s     hits real boards
 ```
@@ -44,7 +44,7 @@ class Source(ABC):
             log.exception("%s: parse failed", self.name); return []
 ```
 
-That split is why 365 tests run in well under a second with no network. The logic most likely to
+That split is why 384 tests run in well under a second with no network. The logic most likely to
 be wrong, interpreting somebody else's payload, is tested against saved fixtures in
 milliseconds, and fails only when the code is wrong.
 

@@ -62,6 +62,7 @@ def build_sources(config: dict) -> list[Source]:
                         default_company=entry.get("company", ""),
                         company_in_title=entry.get("company_in_title", False),
                         company_before_colon=entry.get("company_before_colon", False),
+                        title_pattern=entry.get("title_pattern", ""),
                     )
                 )
             elif kind == "browser":
@@ -284,8 +285,10 @@ def add(db_path: str, company: str, title: str, url: str = "",
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jobwatch", description="Job board monitor.")
     parser.add_argument("command",
-                        choices=["run", "stats", "gui", "mark", "add", "capture", "audit"])
-    parser.add_argument("needle", nargs="?", help="mark: text identifying the job")
+                        choices=["run", "stats", "gui", "mark", "add", "capture", "audit",
+                                 "probe"])
+    parser.add_argument("needle", nargs="?",
+                        help="mark: text identifying the job; probe: the page URL")
     parser.add_argument("status", nargs="?", choices=STATUSES,
                         help="mark: the status to move it to")
     parser.add_argument("--note", default="", help="free text stored with the status")
@@ -312,6 +315,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "stats":
         return stats(args.db)
+
+    if args.command == "probe":
+        if not args.needle:
+            log.error("usage: jobwatch probe <url>")
+            return 2
+        from .probe import probe
+        try:
+            candidates = probe(args.needle, Path("probe"))
+        except PermissionError as exc:
+            log.error("%s", exc)
+            return 1
+        print("saved probe/page.html and probe/page.png")
+        print("card selector candidates (matches, selector, first match):")
+        for c in candidates:
+            print("  " + c.line)
+        if not candidates:
+            print("  none: the page may need longer to render, or a login")
+        return 0
 
     if args.command == "add":
         if not args.company or not args.title:

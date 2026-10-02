@@ -270,3 +270,54 @@ class TestCompanyBeforeColon:
                 "<link>https://weworkremotely.com/remote-jobs/1</link></item></channel></rss>")
         [job] = RSSSource("wwr", "u", company_before_colon=True).parse(feed)
         assert (job.company, job.title) == ("Acme Games", "QA Tester")
+
+
+WWI_PATTERN = r"(?P<company>.+?) is hiring an? (?P<title>.+?) to work from (?P<location>.+)"
+
+
+class TestWorkWithIndies:
+    """Against a trimmed copy of the real feed, not a documented shape."""
+
+    @pytest.fixture
+    def jobs(self):
+        from pathlib import Path
+        from jobwatch.sources import RSSSource
+
+        payload = (Path(__file__).parent / "fixtures" / "workwithindies_sample.xml").read_text("utf-8")
+        return {j.company: j for j in
+                RSSSource("workwithindies", "u", title_pattern=WWI_PATTERN).parse(payload)}
+
+    def test_company_and_title_come_out_of_the_sentence(self, jobs):
+        assert jobs["CM IMMERSIVE"].title == "QA Engineer"
+        assert jobs["Torpor Games"].title == "Senior Gameplay Programmer"   # (m/f/d) stripped
+
+    @pytest.mark.parametrize("company,location", [
+        ("CM IMMERSIVE", "Remote (EET ± 2 hours)"),
+        ("Crytivo", "Remote (UTC-3 hours)"),
+        ("Torpor Games", "Berlin, DE"),
+        ("HexNest Games", "Remote (Worldwide)"),     # leading space in the title
+        ("Elsewhere", "Remote (San Francisco, CA or Remote)"),
+    ])
+    def test_where_becomes_a_location(self, jobs, company, location):
+        assert jobs[company].location == location
+
+    def test_bracket_tags_are_read(self, jobs):
+        assert "qa & cs" in jobs["Crytivo"].tags
+
+    def test_a_german_ad_is_flagged(self, jobs):
+        from jobwatch.language import LIKELY, assess_language
+        assert assess_language(jobs["the Good Evil"].description).level == LIKELY
+
+    def test_keyword_filter_finds_the_qa_roles(self, jobs):
+        from jobwatch.sources import filter_jobs
+        kept = filter_jobs(list(jobs.values()), ["QA"], ["Remote", "Copenhagen"])
+        assert {j.company for j in kept} == {"CM IMMERSIVE", "Crytivo"}
+
+    def test_the_example_config_carries_the_same_pattern(self):
+        import yaml
+        from pathlib import Path
+
+        config = yaml.safe_load(
+            (Path(__file__).resolve().parents[1] / "config.example.yaml").read_text("utf-8"))
+        [entry] = [s for s in config["sources"] if s["name"] == "workwithindies"]
+        assert entry["title_pattern"] == WWI_PATTERN
