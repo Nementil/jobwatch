@@ -26,5 +26,8 @@ probe/
 
 # Private overlay: sources and notes that must not be published.
 config.private.yaml
-# Browser consent state (cookies). Never commit.
+# PRIVATE, never commit. .jobwatch/ holds consent cookies (`jobwatch consent`),
+# config backups (personal search terms) and database backups (application history).
 .jobwatch/
+jobwatch.db.bak-*
+*.db.bak*

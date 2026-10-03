@@ -85,8 +85,8 @@ locations:
 # Codes (da), English names (Danish) or native names (dansk) all work. If this
 # section is missing, the default is exactly what is written here.
 languages:
-  fluent: [en, fr, it, es]
-  basic: [da]
+  fluent: [en]          # example: replace with the languages YOU can work in
+  basic: [da]           # example: languages you only get by in
 
 # How vacancies are scored, 0-100, starting from 50. Every adjustment is
 # listed next to the job, so a score can always be checked.
