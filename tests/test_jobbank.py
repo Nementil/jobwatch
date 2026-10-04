@@ -65,3 +65,10 @@ def test_enriched_payload_puts_the_permit_line_in_the_description():
     jobs = JobBankSource("jb", "x").parse(json.dumps({"feed": FIXTURE, "who": who}))
     assert "without a Canadian work permit" in jobs[0].description
     assert "work permit" not in jobs[1].description.lower()     # page not read: no claim either way
+
+
+def test_detail_pages_are_read_only_for_relevant_titles():
+    src = JobBankSource("jb", "software", detail_if_title=["tester", "help desk"])
+    assert src.wants_detail("Help Desk Technician") and src.wants_detail("software tester")
+    assert not src.wants_detail("general farm worker")
+    assert JobBankSource("jb", "x").wants_detail("anything")      # no filter: every title

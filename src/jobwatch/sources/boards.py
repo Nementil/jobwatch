@@ -313,12 +313,20 @@ class JobBankSource(Source):
                      "or holders of a Canadian work permit.")
 
     def __init__(self, name: str, query: str = "", rows: int = 100,
-                 detail_limit: int | None = None, **options: Any) -> None:
+                 detail_limit: int | None = None, detail_if_title: Iterable[str] = (),
+                 **options: Any) -> None:
         self.name = name
         self.query = query
         self.rows = rows
         self.detail_limit = self.DETAIL_LIMIT if detail_limit is None else int(detail_limit)
+        # Broad searches ("software", "testing") return 100 postings; reading every page
+        # at Crawl-delay 5 would take minutes. Only titles containing one of these words
+        # get their page read. Empty = every posting, up to detail_limit.
+        self.detail_if_title = tuple(w.lower() for w in detail_if_title)
         self.options = options
+
+    def wants_detail(self, title: str) -> bool:
+        return not self.detail_if_title or any(w in title.lower() for w in self.detail_if_title)
 
     @property
     def url(self) -> str:
@@ -330,7 +338,12 @@ class JobBankSource(Source):
 
         delay = max(self.rate_limit_seconds, self.CRAWL_DELAY)
         feed = _fetch_json(self.url, delay)
-        links = re.findall(r'<link[^>]*href="(https://www\.jobbank\.gc\.ca/jobsearch/jobposting/\d+)"', feed)
+        links = []
+        for entry in re.findall(r"<entry>(.*?)</entry>", feed, re.S):
+            link = re.search(r'<link[^>]*href="(https://www\.jobbank\.gc\.ca/jobsearch/jobposting/\d+)"', entry)
+            title = re.search(r"<title[^>]*>(.*?)</title>", entry, re.S)
+            if link and self.wants_detail(title.group(1) if title else ""):
+                links.append(link.group(1))
         who: dict[str, str] = {}
         for link in links[: self.detail_limit]:
             try:
