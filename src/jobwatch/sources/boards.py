@@ -283,3 +283,73 @@ class JobTechSource(JSONBoardSource):
             posted=parse_date(item.get("publication_date")),
             description=description.get("text", "") if isinstance(description, dict) else str(description),
         )
+
+
+class JobBankSource(Source):
+    """Job Bank (Government of Canada): the Atom feed behind every Job Bank search.
+
+        https://www.jobbank.gc.ca/jobsearch/feed/jobSearchRSSfeed?dkw=<keywords>&sort=D
+
+    Official and keyless; robots.txt allows crawling with Crawl-delay 5, which is
+    honoured. `query` is the keyword (the feed reads `dkw`; `searchstring` and
+    `term` are silently ignored and return the newest jobs of any kind).
+
+    Entry titles are NOC occupation names ("help desk technician"), not the
+    employer's own title, and the employer, location and salary live only in
+    the summary's HTML, so a generic RSS parse loses them. Locations look like
+    "Summerside (PE)"; ", Canada" is appended so country-level filters work.
+    """
+
+    FEED = "https://www.jobbank.gc.ca/jobsearch/feed/jobSearchRSSfeed"
+    CRAWL_DELAY = 5.0
+
+    def __init__(self, name: str, query: str = "", rows: int = 100, **options: Any) -> None:
+        self.name = name
+        self.query = query
+        self.rows = rows
+        self.options = options
+
+    @property
+    def url(self) -> str:
+        return self.FEED + "?" + urllib.parse.urlencode({"dkw": self.query, "sort": "D", "rows": self.rows})
+
+    def fetch(self) -> str:
+        return _fetch_json(self.url, max(self.rate_limit_seconds, self.CRAWL_DELAY))
+
+    @staticmethod
+    def _field(summary: str, label: str) -> str:
+        import html
+        import re
+
+        m = re.search(rf"<strong>\s*{label}:\s*</strong>(.*?)(?:<br\s*/?>|$)", summary, re.S | re.I)
+        return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", m.group(1))).split()) if m else ""
+
+    def parse(self, payload: str) -> list[Job]:
+        import html
+        import re
+
+        def text(block: str, tag: str) -> str:
+            m = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", block, re.S)
+            if not m:
+                return ""
+            return html.unescape(re.sub(r"<!\[CDATA\[|\]\]>", "", m.group(1))).strip()
+
+        jobs: list[Job] = []
+        for entry in re.findall(r"<entry>(.*?)</entry>", payload, re.S):
+            link = re.search(r'<link[^>]*href="([^"]+)"', entry)
+            summary = text(entry, "summary")
+            location = self._field(summary, "Location")
+            salary = self._field(summary, "Salary")
+            try:
+                jobs.append(Job(
+                    title=text(entry, "title"),
+                    company=self._field(summary, "Employer") or "Job Bank employer",
+                    url=link.group(1) if link else "",
+                    source=self.name,
+                    location=f"{location}, Canada" if location else "Canada",
+                    posted=parse_date(text(entry, "updated")),
+                    description=f"Salary: {salary}" if salary else "",
+                ))
+            except (ValueError, TypeError):
+                continue
+        return jobs

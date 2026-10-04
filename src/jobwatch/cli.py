@@ -25,7 +25,7 @@ from .models import Job
 from .ranking import RankingSettings, rank_jobs
 from .report import render_console, render_markdown
 from .sources import (ArbeitnowSource, AshbySource, BreezySource, BrowserSource, GreenhouseSource,
-                      HimalayasSource, JobicySource, JobTechSource, LeverSource,
+                      HimalayasSource, JobBankSource, JobicySource, JobTechSource, LeverSource,
                       RemoteOKSource, RemotiveSource, RSSSource, SmartRecruitersSource,
                       Source, WorkableSource, filter_jobs)
 from .store import STATUSES, JobStore
@@ -45,6 +45,7 @@ ATS_TYPES = {
 BOARD_TYPES = {
     "remotive": RemotiveSource, "remoteok": RemoteOKSource, "jobicy": JobicySource,
     "himalayas": HimalayasSource, "arbeitnow": ArbeitnowSource, "jobtech": JobTechSource,
+    "jobbank": JobBankSource,
 }
 
 
