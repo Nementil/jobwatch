@@ -285,16 +285,36 @@ class SmartRecruitersSource(Source):
         # all post as "Ubisoft2", so Massive is `city: Malmö`.
         self.filters = {"city": city, "country": country, "q": query}
 
-    @property
-    def url(self) -> str:
+    PAGE = 100          # the API's maximum page size
+    MAX_PAGES = 5
+
+    def page_url(self, offset: int) -> str:
         import urllib.parse
 
-        params = {"limit": 100, **{k: v for k, v in self.filters.items() if v}}
+        params = {"limit": self.PAGE, "offset": offset,
+                  **{k: v for k, v in self.filters.items() if v}}
         return (f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?"
                 + urllib.parse.urlencode(params))
 
+    @property
+    def url(self) -> str:
+        return self.page_url(0)
+
     def fetch(self) -> str:
-        return _fetch_json(self.url, self.rate_limit_seconds)
+        """Every page up to MAX_PAGES, merged into one {"content": [...]} payload.
+
+        One page silently capped large employers at 100: Netcompany had 173 postings
+        and Ubisoft's Canadian studios 162 (2026-10-04).
+        """
+        content: list = []
+        for page in range(self.MAX_PAGES):
+            data = json.loads(_fetch_json(self.page_url(page * self.PAGE), self.rate_limit_seconds))
+            items = data.get("content", []) if isinstance(data, dict) else []
+            content.extend(items)
+            total = data.get("totalFound") or 0 if isinstance(data, dict) else 0
+            if len(items) < self.PAGE or len(content) >= total:
+                break
+        return json.dumps({"content": content})
 
     def parse(self, payload: str) -> list[Job]:
         from .boards import parse_date

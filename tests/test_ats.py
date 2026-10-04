@@ -133,3 +133,48 @@ class TestLever:
 
     def test_url_is_built_from_slug(self):
         assert LeverSource("lv", "ro").url == "https://api.lever.co/v0/postings/ro?mode=json"
+
+
+# --- SmartRecruiters paging (Netcompany 173, Ubisoft Canada 162 postings on 2026-10-04) ----
+def _fake_smartrecruiters(total, monkeypatch):
+    import json as _json
+    from urllib.parse import parse_qs, urlparse
+
+    import jobwatch.sources.ats as ats_mod
+
+    seen = []
+
+    def fake(url, rate_limit):
+        offset = int(parse_qs(urlparse(url).query)["offset"][0])
+        seen.append(offset)
+        n = max(0, min(100, total - offset))
+        items = [{"id": str(offset + i), "name": f"Job {offset + i}", "location": {}} for i in range(n)]
+        return _json.dumps({"totalFound": total, "content": items})
+
+    monkeypatch.setattr(ats_mod, "_fetch_json", fake)
+    return seen
+
+
+def test_smartrecruiters_follows_pages_until_total(monkeypatch):
+    from jobwatch.sources.ats import SmartRecruitersSource
+
+    seen = _fake_smartrecruiters(173, monkeypatch)
+    src = SmartRecruitersSource("sr", "Netcompany1")
+    assert len(src.parse(src.fetch())) == 173 and seen == [0, 100]
+
+
+def test_smartrecruiters_stops_after_a_short_page(monkeypatch):
+    from jobwatch.sources.ats import SmartRecruitersSource
+
+    seen = _fake_smartrecruiters(13, monkeypatch)
+    src = SmartRecruitersSource("sr", "Gameloft", country="ca")
+    assert len(src.parse(src.fetch())) == 13 and seen == [0]
+
+
+def test_smartrecruiters_page_url_keeps_filters():
+    from urllib.parse import parse_qs, urlparse
+
+    from jobwatch.sources.ats import SmartRecruitersSource
+
+    q = parse_qs(urlparse(SmartRecruitersSource("sr", "Ubisoft2", country="ca").page_url(100)).query)
+    assert q["offset"] == ["100"] and q["country"] == ["ca"] and q["limit"] == ["100"]

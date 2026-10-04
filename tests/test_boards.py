@@ -370,4 +370,4 @@ class TestSmartRecruitersFilters:
         [src] = build_sources({"sources": [{"name": "massive", "type": "smartrecruiters",
                                             "slug": "Ubisoft2", "city": "Malmö"}]})
         assert src.url == ("https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings"
-                           "?limit=100&city=Malm%C3%B6")
+                           "?limit=100&offset=0&city=Malm%C3%B6")
