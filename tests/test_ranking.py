@@ -197,3 +197,23 @@ class TestPipeline:
         [only] = rank_jobs([repost], SETTINGS, store)
         assert only.assessment.prior.status == "applied"
         assert only.assessment.tier == UNVIABLE
+
+
+class TestAvoid:
+    """`ranking.avoid`: words anywhere in the ad that mean a different job (PLC automation)."""
+
+    PLC_AD = ENGLISH_AD + " You will program Siemens PLC and SCADA systems on the plant floor."
+
+    def test_avoid_words_in_the_ad_lower_the_score(self):
+        settings = RankingSettings.from_config(
+            {"keywords": ["automation engineer"], "ranking": {"avoid": {"plc": 25, "scada": 25}}})
+        plain = assessed(job("Automation Engineer"), settings=settings)
+        plc = assessed(job("Automation Engineer", description=self.PLC_AD), settings=settings)
+        assert plain.score - plc.score == 40                     # 25 + 25, capped at 40
+        assert any("'plc'" in r and "'scada'" in r for r in plc.reasons)
+
+    def test_no_avoid_section_changes_nothing(self):
+        settings = RankingSettings.from_config({"keywords": ["automation engineer"]})
+        assert settings.avoid == {}
+        assert (assessed(job("Automation Engineer"), settings=settings).score
+                == assessed(job("Automation Engineer", description=self.PLC_AD), settings=settings).score)

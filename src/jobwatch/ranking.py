@@ -60,6 +60,9 @@ class RankingSettings:
     keywords: tuple[str, ...] = ()
     boost: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_BOOST))
     penalise: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_PENALISE))
+    #: Words ANYWHERE in the ad that make it a different job than it sounds like
+    #: (an "automation engineer" who programs PLCs, not tests). Empty by default.
+    avoid: Mapping[str, int] = field(default_factory=dict)
     profile: LanguageProfile = DEFAULT_PROFILE
     stale_after_days: int = 45
     remote_regions: tuple[str, ...] = DEFAULT_REMOTE_REGIONS
@@ -78,6 +81,7 @@ class RankingSettings:
             keywords=tuple(k for k in kws if str(k).strip()),
             boost=_weights(section.get("boost"), DEFAULT_BOOST),
             penalise=_weights(section.get("penalise"), DEFAULT_PENALISE),
+            avoid=_weights(section.get("avoid"), {}),
             profile=LanguageProfile.from_config(config),
             stale_after_days=int(section.get("stale_after_days", 45)),
             remote_regions=tuple(str(r).lower() for r in
@@ -218,6 +222,12 @@ def assess(vacancy: Vacancy, settings: RankingSettings, prior: Prior | None = No
         total = min(sum(p for _, p in penalised), 40)
         score -= total
         reasons.append(f"-{total} " + ", ".join(f"'{w}'" for w, _ in penalised) + " in title")
+
+    avoided = [(w, p) for w, p in sorted(settings.avoid.items()) if _word_in(w, lowered)]
+    if avoided:
+        total = min(sum(p for _, p in avoided), 40)
+        score -= total
+        reasons.append(f"-{total} mentions " + ", ".join(f"'{w}'" for w, _ in avoided))
 
     verdict = assess_language(text, settings.profile)
     points, why = _language_points(verdict, settings.profile)
