@@ -32,6 +32,7 @@ ranking can penalise a restriction that excludes you.
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 from datetime import date, datetime, timezone
 from typing import Any, Iterable
@@ -303,10 +304,20 @@ class JobBankSource(Source):
     FEED = "https://www.jobbank.gc.ca/jobsearch/feed/jobSearchRSSfeed"
     CRAWL_DELAY = 5.0
 
-    def __init__(self, name: str, query: str = "", rows: int = 100, **options: Any) -> None:
+    #: Posting pages read per run for the "Who can apply" line (each one waits
+    #: CRAWL_DELAY). The feed itself never says who may apply.
+    DETAIL_LIMIT = 20
+
+    NO_PERMIT = "Work permit: the employer accepts candidates without a Canadian work permit."
+    PERMIT_NEEDED = ("Work permit: the employer accepts only Canadian citizens, permanent residents "
+                     "or holders of a Canadian work permit.")
+
+    def __init__(self, name: str, query: str = "", rows: int = 100,
+                 detail_limit: int | None = None, **options: Any) -> None:
         self.name = name
         self.query = query
         self.rows = rows
+        self.detail_limit = self.DETAIL_LIMIT if detail_limit is None else int(detail_limit)
         self.options = options
 
     @property
@@ -314,7 +325,38 @@ class JobBankSource(Source):
         return self.FEED + "?" + urllib.parse.urlencode({"dkw": self.query, "sort": "D", "rows": self.rows})
 
     def fetch(self) -> str:
-        return _fetch_json(self.url, max(self.rate_limit_seconds, self.CRAWL_DELAY))
+        """The feed, plus each posting's "Who can apply" line, as one JSON payload."""
+        import re
+
+        delay = max(self.rate_limit_seconds, self.CRAWL_DELAY)
+        feed = _fetch_json(self.url, delay)
+        links = re.findall(r'<link[^>]*href="(https://www\.jobbank\.gc\.ca/jobsearch/jobposting/\d+)"', feed)
+        who: dict[str, str] = {}
+        for link in links[: self.detail_limit]:
+            try:
+                who[link] = self.who_can_apply(_fetch_json(link, delay))
+            except OSError:
+                continue          # one unreachable posting costs its flag, not the run
+        return json.dumps({"feed": feed, "who": who})
+
+    @staticmethod
+    def who_can_apply(page_html: str) -> str:
+        """The posting's "Who can apply" sentence as plain text, or ""."""
+        import html
+        import re
+
+        text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", page_html, flags=re.S)
+        text = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", text)).split())
+        m = re.search(r"Who can apply for this job\?(.*?)(?:Show how to apply|Advertised until|$)", text)
+        return m.group(1).strip()[:400] if m else ""
+
+    @classmethod
+    def permit_line(cls, who: str) -> str:
+        if not who:
+            return ""
+        if re.search(r"without a valid Canadian work permit", who, re.I):
+            return cls.NO_PERMIT
+        return cls.PERMIT_NEEDED
 
     @staticmethod
     def _field(summary: str, label: str) -> str:
@@ -327,6 +369,11 @@ class JobBankSource(Source):
     def parse(self, payload: str) -> list[Job]:
         import html
         import re
+
+        who: dict[str, str] = {}
+        if payload.lstrip().startswith("{"):
+            data = json.loads(payload)
+            payload, who = data.get("feed", ""), data.get("who", {}) or {}
 
         def text(block: str, tag: str) -> str:
             m = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", block, re.S)
@@ -348,7 +395,10 @@ class JobBankSource(Source):
                     source=self.name,
                     location=f"{location}, Canada" if location else "Canada",
                     posted=parse_date(text(entry, "updated")),
-                    description=f"Salary: {salary}" if salary else "",
+                    description=" ".join(p for p in (
+                        f"Salary: {salary}." if salary else "",
+                        self.permit_line(who.get(link.group(1), "") if link else ""),
+                    ) if p),
                 ))
             except (ValueError, TypeError):
                 continue

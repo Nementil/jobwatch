@@ -35,3 +35,33 @@ def test_empty_feed_is_an_empty_list():
 def test_config_type_jobbank_builds_the_source():
     [src] = build_sources({"sources": [{"name": "jb", "type": "jobbank", "query": "qa"}]})
     assert isinstance(src, JobBankSource)
+
+
+# --- "Who can apply": a posting that accepts candidates without a work permit is viable pre-IEC
+import json  # noqa: E402
+
+NO_PERMIT_PAGE = ("<h3>Who can apply for this job?</h3><p>The employer accepts applications from:</p>"
+                  "<ul><li>Canadian citizens and permanent or temporary residents of Canada</li>"
+                  "<li>other candidates, with or without a valid Canadian work permit</li></ul>"
+                  "<a>Show how to apply</a>")
+PERMIT_PAGE = ("<h3>Who can apply for this job?</h3><p>The employer accepts applications from:</p>"
+               "<ul><li>Canadian citizens and permanent or temporary residents of Canada</li>"
+               "<li>other candidates with a valid Canadian work permit</li></ul><p>Advertised until 2026-10-20</p>")
+
+
+def test_who_can_apply_is_read_from_the_posting_page():
+    assert "without a valid Canadian work permit" in JobBankSource.who_can_apply(NO_PERMIT_PAGE)
+    assert JobBankSource.who_can_apply("<p>no such section</p>") == ""
+
+
+def test_permit_line_tells_the_two_cases_apart():
+    assert JobBankSource.permit_line(JobBankSource.who_can_apply(NO_PERMIT_PAGE)) == JobBankSource.NO_PERMIT
+    assert JobBankSource.permit_line(JobBankSource.who_can_apply(PERMIT_PAGE)) == JobBankSource.PERMIT_NEEDED
+    assert JobBankSource.permit_line("") == ""
+
+
+def test_enriched_payload_puts_the_permit_line_in_the_description():
+    who = {"https://www.jobbank.gc.ca/jobsearch/jobposting/50411804": JobBankSource.who_can_apply(NO_PERMIT_PAGE)}
+    jobs = JobBankSource("jb", "x").parse(json.dumps({"feed": FIXTURE, "who": who}))
+    assert "without a Canadian work permit" in jobs[0].description
+    assert "work permit" not in jobs[1].description.lower()     # page not read: no claim either way
