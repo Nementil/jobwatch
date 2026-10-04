@@ -391,3 +391,63 @@ class BreezySource(Source):
             except ValueError:
                 continue
         return jobs
+
+
+class RecruiteeSource(Source):
+    """Recruitee public offers API.
+
+        https://<slug>.recruitee.com/api/offers/        (or <base_url>/api/offers/)
+
+    Companies on a custom careers domain (Trackman: careers.trackman.com) serve
+    the same endpoint there, so `base_url` overrides the default host. Offers
+    carry HTML description and requirements; both go into the ad text so the
+    language check and the ranking can read them.
+    """
+
+    def __init__(self, name: str, slug: str, company: str = "", base_url: str = "") -> None:
+        self.name = name
+        self.slug = slug
+        self.company = company
+        self.base_url = (base_url or f"https://{slug}.recruitee.com").rstrip("/")
+
+    @property
+    def url(self) -> str:
+        return f"{self.base_url}/api/offers/"
+
+    def fetch(self) -> str:
+        return _fetch_json(self.url, self.rate_limit_seconds)
+
+    def parse(self, payload: str) -> list[Job]:
+        import html
+        import re
+
+        from .boards import parse_date
+
+        def plain(value: Any) -> str:
+            return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", str(value or ""))).split())
+
+        data = json.loads(payload)
+        offers = data.get("offers", []) if isinstance(data, dict) else []
+        jobs: list[Job] = []
+        for item in offers:
+            if not isinstance(item, dict):
+                continue
+            location = item.get("location") or ", ".join(
+                p for p in (item.get("city"), item.get("country")) if p)
+            if str(item.get("remote")).lower() == "true":
+                location = f"Remote ({location})" if location else "Remote"
+            try:
+                jobs.append(Job(
+                    title=item.get("title", ""),
+                    company=self.company or item.get("company_name", "") or self.slug,
+                    url=item.get("careers_url", "") or f"{self.base_url}/o/{item.get('slug', '')}",
+                    source=self.name,
+                    location=location or "",
+                    posted=parse_date(item.get("published_at") or item.get("created_at")),
+                    tags=tuple(t for t in (item.get("department"),) if t),
+                    description=" ".join(p for p in (plain(item.get("description")),
+                                                     plain(item.get("requirements"))) if p),
+                ))
+            except ValueError:
+                continue
+        return jobs
