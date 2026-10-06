@@ -2,6 +2,11 @@
 #
 # Copy to config.yaml and edit. config.yaml is gitignored so your personal
 # search terms are not published along with the code.
+#
+# Anything that must stay private even from a backup or a shared copy of
+# this file (a source a site allowed YOU to read, its cookie file, notes
+# naming people) goes in config.private.yaml instead, which is merged on top
+# of this one. See config.private.example.yaml.
 
 # Substring match against job title and tags. Case-insensitive.
 #
@@ -36,6 +41,13 @@ exclude_keywords:
   - kvalitetschef
   - regulatory affairs
   - laegemiddel          # Danish: pharmaceutical
+  # Seen in a real run: "QA Supply Specialist till life science bolag" is
+  # pharma supply-chain QA, not software testing.
+  - life science
+  - supply specialist
+  # Seniority: excluding drops the job; the `ranking: penalise:` list below
+  # keeps it visible with fewer points. Use one or the other per word.
+  # - senior
 
 # Matched against the employer name only, as a substring, so "Ferring"
 # catches "Ferring Pharmaceuticals A/S".
@@ -56,6 +68,69 @@ locations:
   - Denmark
   - Danmark
   - Remote
+  # The Swedish side of the Oresund region, for Platsbanken and Sharkmob.
+  - Malmö
+  - Malmo
+  - Lund
+  - Helsingborg
+  - Sverige
+  - Sweden
+
+# The languages you can WORK in, and the ones you only get by in. A job that
+# states a requirement for a language outside `fluent` is ranked unviable,
+# basic included: "flydende dansk" against basic Danish is a lottery ticket,
+# not an application. An ad WRITTEN in such a language is ranked a long shot
+# at best, unless it says the working language is English.
+#
+# Codes (da), English names (Danish) or native names (dansk) all work. If this
+# section is missing, the default is exactly what is written here.
+languages:
+  fluent: [en]          # example: replace with the languages YOU can work in
+  basic: [da]           # example: languages you only get by in
+
+# How vacancies are scored, 0-100, starting from 50. Every adjustment is
+# listed next to the job, so a score can always be checked.
+#   title contains a keyword     +15, +5 per extra keyword (max +25)
+#   keyword only in the tags     -10
+#   boost word anywhere in ad    its points (max +20 in total)
+#   penalise word in the title   its points (max -40 in total)
+#   stated language requirement  -60 and unviable, whatever the score
+#   ad written in a language
+#     you do not work in         -35 and at best a long shot
+#   a language you lack is a plus  -5 if you have basic, else -10
+#   "working language is English"  +5
+#   you already applied / were rejected   -50 and unviable
+#   you skipped it before        -30
+#   posted more than N days ago  -10
+# 55 and up is viable, 30-54 a long shot, below 30 unviable.
+#
+# Seniority is penalised, not excluded: a "Senior" title is sometimes a
+# mid-level role with an inflated label. Lower these if you are senior.
+ranking:
+  boost:
+    playwright: 10
+    pytest: 5
+    python: 5
+  # avoid: words ANYWHERE in the ad that make it a different job than its title
+  # suggests, e.g. an "automation engineer" who programs PLCs. Empty by default.
+  #   avoid:
+  #     plc: 25
+  #     scada: 25
+  penalise:
+    senior: 10
+    lead: 10
+    principal: 20
+    staff: 15
+    head of: 25
+    director: 25
+    manager: 20
+    architect: 15
+  stale_after_days: 45
+  # A remote job limited to a region not named here ("Remote (USA only)")
+  # costs 25 points. Matched as whole words against the restriction.
+  remote_regions: [worldwide, anywhere, global, europe, european, emea, eu,
+                   denmark, sweden, nordic, nordics, scandinavia, france, italy,
+                   spain, cet, cest, gmt, utc]
 
 # Drop seen-records older than this so the database does not grow forever.
 retain_days: 180
@@ -134,6 +209,11 @@ sources:
     url: https://sharkmob.teamtailor.com/jobs.rss
     company: Sharkmob
     enabled: true
+    # A source's own `locations:` replaces the global list for its jobs only.
+    # Use it for "this city, but only for these employers": a studio feed can
+    # accept Stockholm while the general boards above do not. An empty list
+    # means anywhere, for this source.
+    # locations: [Malmö, Malmo, Stockholm]
 
   # Avalanche Studios (Stockholm + Malmo): careers page is client-rendered and
   # does not name its ATS. Open avalanchestudios.com/careers, click a job, and
@@ -145,6 +225,107 @@ sources:
   # SmartRecruiters public API answered for the company ids I tried but
   # returned zero postings, so the id is wrong rather than the approach. Find
   # the real one in the URL of any Ubisoft job posting.
+
+  # --- Sweden: Arbetsförmedlingen's open data (Platsbanken) --------------
+  # Every ad on Sweden's public job board, published by the Swedish public
+  # employment service as open data (CC0) for exactly this use. No key.
+  - name: platsbanken-testare
+    type: jobtech
+    query: testare
+    enabled: true
+
+  - name: platsbanken-qa
+    type: jobtech
+    query: QA
+    enabled: true
+
+  # --- Remote boards with an official, keyless API ------------------------
+  # Each one publishes its API for third-party use. None has been fetched
+  # from this repository yet: run `pytest -m live` once, then `run --dry`.
+  # Remote jobs come back with their restriction in the location, e.g.
+  # "Remote (USA only)", which the ranking penalises (see remote_regions).
+  - name: remotive
+    type: remotive
+    query: qa
+    enabled: true
+
+  # Remote OK's API terms: link back to the job on Remote OK and name
+  # "Remote OK" as the source. Reports do both, as long as this source keeps
+  # a name containing "remoteok". Do not use their logo.
+  - name: remoteok
+    type: remoteok
+    query: qa
+    enabled: true
+
+  - name: jobicy
+    type: jobicy
+    query: qa
+    enabled: true
+
+  - name: himalayas
+    type: himalayas
+    query: qa
+    enabled: true
+
+  # European jobs, mostly from employers' own ATS boards. No search
+  # parameter: the keyword filter does the work.
+  - name: arbeitnow
+    type: arbeitnow
+    remote_only: true
+    enabled: true
+
+  # We Work Remotely publishes RSS per category. There is no QA category, so
+  # this reads the programming feed and the keyword filter picks QA out.
+  - name: weworkremotely
+    type: rss
+    url: https://weworkremotely.com/categories/remote-programming-jobs.rss
+    company_before_colon: true     # titles read "Company: Job title"
+    enabled: true
+
+  # --- Games ---------------------------------------------------------------
+  # Work With Indies: indie studios, many remote. The feed writes a sentence
+  # instead of a title, so title_pattern pulls the parts out of it.
+  - name: workwithindies
+    type: rss
+    url: https://www.workwithindies.com/careers/rss.xml
+    title_pattern: '(?P<company>.+?) is hiring an? (?P<title>.+?) to work from (?P<location>.+)'
+    enabled: true
+  #
+  # gamesjobsdirect.com publishes no feed, so it takes the browser source.
+  # The selector below is a placeholder: I could not load the site to read
+  # it. On your machine, run
+  #     python -m jobwatch probe https://www.gamesjobsdirect.com/jobs
+  # which checks robots.txt, saves probe/page.png and suggests selectors.
+  # Put the right one here, check the site's terms, run `run --dry`, and
+  # only then enable it. robots.txt is obeyed on every fetch regardless.
+  - name: gamesjobsdirect
+    type: browser
+    url: https://www.gamesjobsdirect.com/jobs
+    card_selector: '[class*="job"]'
+    enabled: false
+
+  # Most studios post through an ATS, which is the better route anyway: one
+  # source per studio, straight from the employer. Read the slug from the
+  # URL a "Careers" link lands on:
+  #   jobs.ashbyhq.com/<slug>              ->  type: ashby
+  #   apply.workable.com/<slug>/           ->  type: workable
+  #   jobs.smartrecruiters.com/<slug>/...  ->  type: smartrecruiters
+  #       (city: / country: narrow a group account, e.g. slug: Ubisoft2, city: Malmö)
+  #   boards.greenhouse.io/<slug>          ->  type: greenhouse
+  #   jobs.lever.co/<slug>                 ->  type: lever
+  #   <slug>.breezy.hr                     ->  type: breezy
+  #   <slug>.teamtailor.com                ->  type: rss, url .../jobs.rss
+  # - name: some-studio
+  #   type: ashby
+  #   slug: somestudio
+  #   company: Some Studio
+  #   enabled: true
+
+  # --- Not included, on purpose -------------------------------------------
+  # LinkedIn, Indeed and Glassdoor publish no public feed, and their terms
+  # forbid automated collection; "RSS for LinkedIn" services scrape it. The
+  # legal route is the job-alert e-mail LinkedIn sends you (see README).
+  # Jobnet.dk (the Danish public board) offers no open API I could find.
 
   # --- Browser: only for boards that render listings client-side. ---------
   # Verify a board's terms of service and robots.txt before enabling one of

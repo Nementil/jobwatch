@@ -16,6 +16,9 @@ Design constraints this had to satisfy:
   a progress bar.
 * Nothing is written to the seen-set unless "Mark as seen" is pressed, so
   browsing results never silently suppresses them from a later run.
+* One row per VACANCY, not per listing, best first. The same job on three
+  boards is one row naming the three boards, and the row's score says why it
+  is where it is (see ranking.py).
 """
 
 from __future__ import annotations
@@ -33,11 +36,12 @@ from typing import Any
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-import yaml
 
 from .models import Job
+from .ranking import UNVIABLE, Ranked, RankingSettings, rank_jobs
 from .report import render_markdown
-from .sources import filter_jobs
+from .config import collect_matching
+from .config import load as load_config
 from .store import STATUSES, JobStore
 
 log = logging.getLogger(__name__)
@@ -48,12 +52,16 @@ class JobWatchGUI:
         self.config_path = Path(config_path)
         self.db_path = db_path
         self.config: dict[str, Any] = {}
-        self.results: list[Job] = []
+        #: What the tree shows, in row order. Row N is results[N].
+        self.results: list[Ranked] = []
+        #: Everything the last search ranked, before "Hide unviable".
+        self._ranked_all: list[Ranked] = []
+        self._total_seen = 0
         self.queue: queue.Queue = queue.Queue()
 
         self.root = tk.Tk()
         self.root.title("jobwatch")
-        self.root.geometry("980x620")
+        self.root.geometry("1220x660")
         self.root.minsize(720, 420)
 
         self._build_widgets()
@@ -101,6 +109,13 @@ class JobWatchGUI:
         self.export_btn = ttk.Button(actions, text="Export report", command=self.on_export, state="disabled")
         self.export_btn.pack(side="left", padx=(8, 0))
 
+        # Off by default. Hiding is a convenience for a long list, not a
+        # verdict: the language check is a heuristic, and a ranking that
+        # hides its losers by default can never be checked.
+        self.hide_unviable = tk.BooleanVar(value=False)
+        ttk.Checkbutton(actions, text="Hide unviable", variable=self.hide_unviable,
+                        command=self._render).pack(side="left", padx=(8, 0))
+
         self.progress = ttk.Progressbar(actions, mode="indeterminate", length=140)
         self.progress.pack(side="right")
 
@@ -114,19 +129,26 @@ class JobWatchGUI:
         # the seen-set flag and not the status bar. Three things called status
         # in one file is a real risk here, so the seen-set is only ever
         # referred to as "seen" and the bar as "status_text".
-        columns = ("status", "company", "title", "location", "source", "posted")
+        columns = ("status", "score", "tier", "language", "company", "title",
+                   "location", "source", "posted")
         self.tree = ttk.Treeview(wrap, columns=columns, show="headings", selectmode="browse")
         for col, label, width in (
-            ("status", "Status", 80),
-            ("company", "Company", 170),
-            ("title", "Title", 380),
-            ("location", "Location", 130),
+            ("status", "Status", 70),
+            ("score", "Score", 50),
+            ("tier", "Fit", 75),
+            ("language", "Language", 140),
+            ("company", "Company", 150),
+            ("title", "Title", 315),
+            ("location", "Location", 110),
             ("source", "Source", 150),
-            ("posted", "Posted", 90),
+            ("posted", "Posted", 85),
         ):
             self.tree.heading(col, text=label, command=lambda c=col: self._sort_by(c))
             self.tree.column(col, width=width, anchor="w")
         self.tree.grid(row=0, column=0, sticky="nsew")
+        # Unviable rows are greyed rather than hidden, so the eye skips them
+        # without the list pretending they do not exist.
+        self.tree.tag_configure(UNVIABLE, foreground="#8a8a8a")
 
         bar = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         bar.grid(row=0, column=1, sticky="ns")
@@ -167,6 +189,14 @@ class JobWatchGUI:
         )
         self.apply_btn.grid(row=0, column=4, sticky="e")
 
+        # Why the selected vacancy scored what it did, which boards carry it,
+        # and what you already did about it. The score alone is a number to
+        # take on trust; this is what makes it checkable.
+        self.detail_var = tk.StringVar(value="")
+        ttk.Label(track, textvariable=self.detail_var, foreground="#444",
+                  wraplength=1150, justify="left").grid(
+            row=1, column=0, columnspan=5, sticky="w", pady=(6, 0))
+
         # Enabling this only on selection stops the most likely mistake, which
         # is pressing Save with nothing selected and silently marking nothing.
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
@@ -182,7 +212,7 @@ class JobWatchGUI:
             self.status_text.set(f"No {self.config_path}. Copy config.example.yaml first.")
             self.run_btn.state(["disabled"])
             return
-        self.config = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
+        self.config = load_config(self.config_path)
         self.keywords_var.set(", ".join(self.config.get("keywords", [])))
         self.locations_var.set(", ".join(self.config.get("locations", [])))
         enabled = [s for s in self.config.get("sources", []) if s.get("enabled", True)]
@@ -201,6 +231,7 @@ class JobWatchGUI:
         self.status_text.set("Searching...")
         self.tree.delete(*self.tree.get_children())
         self.results = []
+        self._ranked_all = []
 
         # Config is read on the UI thread and passed in, so the worker never
         # touches shared mutable state or a widget.
@@ -214,16 +245,14 @@ class JobWatchGUI:
     def _worker(self, config: dict, keywords: list[str], locations: list[str], new_only: bool) -> None:
         """Runs off the UI thread. Must never touch a widget."""
         try:
-            from .cli import build_sources
-
-            collected: list[Job] = []
-            for source in build_sources(config):
-                collected.extend(source.collect())
-            matched = filter_jobs(collected, keywords, locations)
+            # Same collection as `jobwatch run`, including each source's own
+            # `locations:` rule, with the search boxes as the defaults.
+            matched, collected = collect_matching(config, keywords=keywords,
+                                                  locations=locations)
             if new_only:
                 with JobStore(self.db_path) as store:
                     matched = store.new_jobs(matched)
-            self.queue.put(("done", matched, len(collected)))
+            self.queue.put(("done", matched, collected))
         except Exception as exc:            # noqa: BLE001 - reported to the user
             log.exception("search failed")
             self.queue.put(("error", exc, 0))
@@ -244,40 +273,66 @@ class JobWatchGUI:
             pass
         self.root.after(100, self._drain_queue)
 
-    def _statuses_for(self, jobs: list[Job]) -> dict[str, str]:
-        """Current application status per fingerprint, for jobs already stored.
+    def _statuses_for(self, items: list[Ranked]) -> dict[str, str]:
+        """Current application status per vacancy key, for vacancies stored.
 
         One query for the whole result set rather than one per row: a search
         can return a hundred jobs and the UI thread is doing this.
 
-        A job that has never been recorded has no row at all, which is not the
-        same as `new` and is shown differently. Conflating them would claim a
-        vacancy is on the worklist when nothing has been written about it.
+        A vacancy that has never been recorded has no row at all, which is not
+        the same as `new` and is shown differently. Conflating them would claim
+        a vacancy is on the worklist when nothing has been written about it.
         """
-        if not jobs:
+        if not items:
             return {}
         with JobStore(self.db_path) as store:
-            known = {row["fingerprint"]: row["status"] for row in store.all_jobs()}
-        return {j.fingerprint: known.get(j.fingerprint, "") for j in jobs}
+            return store.statuses_by_vacancy(r.vacancy.key for r in items)
+
+    def _settings(self) -> RankingSettings:
+        """Ranking settings from config, with the keywords actually searched."""
+        return RankingSettings.from_config(self.config, self._split(self.keywords_var.get()))
 
     def _show_results(self, jobs: list[Job], total_seen: int) -> None:
+        """Group, rank and display a search's listings. UI thread only."""
         self.progress.stop()
         self.run_btn.state(["!disabled"])
-        self.results = jobs
-        statuses = self._statuses_for(jobs)
-        for job in jobs:
+        with JobStore(self.db_path) as store:
+            self._ranked_all = rank_jobs(jobs, self._settings(), store, date.today())
+        self._total_seen = total_seen
+        self._render()
+
+    def _render(self) -> None:
+        """Fill the tree from the last ranking, honouring "Hide unviable"."""
+        self.tree.delete(*self.tree.get_children())
+        hidden = 0
+        if self.hide_unviable.get():
+            self.results = [r for r in self._ranked_all if r.assessment.tier != UNVIABLE]
+            hidden = len(self._ranked_all) - len(self.results)
+        else:
+            self.results = list(self._ranked_all)
+        statuses = self._statuses_for(self.results)
+        for item in self.results:
+            job, a, v = item.job, item.assessment, item.vacancy
+            source = job.source if len(v.sources) == 1 else f"{job.source} +{len(v.sources) - 1}"
             self.tree.insert(
-                "", "end",
-                values=(statuses.get(job.fingerprint) or "-",
-                        job.company, job.title, job.location or "-",
-                        job.source, job.posted.isoformat() if job.posted else "-"),
+                "", "end", tags=(a.tier,),
+                values=(statuses.get(v.key) or "-", a.score, a.tier, a.language.label,
+                        job.company, job.title, v.location or "-",
+                        source, v.posted.isoformat() if v.posted else "-"),
             )
-        if jobs:
+        if self.results:
             self.mark_btn.state(["!disabled"])
             self.export_btn.state(["!disabled"])
+        else:
+            self.mark_btn.state(["disabled"])
+            self.export_btn.state(["disabled"])
         scope = "new" if self.new_only.get() else "matching"
+        viable = sum(1 for r in self._ranked_all if r.assessment.tier == "viable")
+        listings = sum(len(r.vacancy.listings) for r in self._ranked_all)
+        hid = f", {hidden} unviable hidden" if hidden else ""
         self.status_text.set(
-            f"{len(jobs)} {scope} of {total_seen} collected. "
+            f"{len(self._ranked_all)} {scope} vacancies ({listings} listings) of "
+            f"{self._total_seen} collected, {viable} viable{hid}. "
             f"Double-click to open. {self._rate_summary()}"
         )
 
@@ -295,46 +350,71 @@ class JobWatchGUI:
         return f"Responses: {answered}/{applied} ({rate:.0%})."
 
     # ------------------------------------------------------------ actions --
-    def _selected_job(self) -> Job | None:
+    def _selected(self) -> Ranked | None:
         selection = self.tree.selection()
         if not selection:
             return None
         index = self.tree.index(selection[0])
         return self.results[index] if 0 <= index < len(self.results) else None
 
+    def _selected_job(self) -> Job | None:
+        """The selected vacancy's primary listing: what a row shows and opens."""
+        item = self._selected()
+        return item.job if item else None
+
     def _on_select(self, _event: object = None) -> None:
         """Enable Save and show what the selected job is currently marked as."""
-        job = self._selected_job()
-        if not job:
+        item = self._selected()
+        if not item:
             self.apply_btn.state(["disabled"])
+            self.detail_var.set("")
             return
         self.apply_btn.state(["!disabled"])
+        self.detail_var.set(self._describe(item))
+        row = None
         with JobStore(self.db_path) as store:
-            rows = store.find(job.fingerprint)
-        if rows:
+            for fingerprint in item.vacancy.fingerprints:
+                rows = store.find(fingerprint)
+                if rows:
+                    row = rows[0]
+                    break
+        if row is not None:
             # Pre-select the CURRENT status rather than leaving the dropdown on
             # whatever was used last. Otherwise the box shows "applied" next to
             # a job that was rejected, which is a UI actively lying about state.
-            self.mark_status.set(rows[0]["status"])
-            self.note_var.set(rows[0]["note"] or "")
+            self.mark_status.set(row["status"])
+            self.note_var.set(row["note"] or "")
         else:
             self.note_var.set("")
 
-    def on_set_status(self) -> None:
-        """Record the selected job's application status.
+    @staticmethod
+    def _describe(item: Ranked) -> str:
+        a, v = item.assessment, item.vacancy
+        parts = [f"{a.score} ({a.tier}): " + ("; ".join(a.reasons) or "no adjustments")]
+        if len(v.listings) > 1:
+            parts.append("listed on: " + ", ".join(v.sources))
+        if a.history:
+            parts.append(a.history)
+        if a.similar_to:
+            parts.append("possible duplicate of: " + "; ".join(a.similar_to))
+        return "   |   ".join(parts)
 
-        Writes the job to the store first if it is not there yet. Marking a
-        job you just found as `applied` has to work without pressing "Mark as
-        seen" first: those are unrelated ideas, and requiring one before the
-        other would be a rule nobody can guess.
+    def on_set_status(self) -> None:
+        """Record the selected vacancy's application status.
+
+        Writes its listings to the store first if they are not there yet.
+        Marking a job you just found as `applied` has to work without pressing
+        "Mark as seen" first: those are unrelated ideas, and requiring one
+        before the other would be a rule nobody can guess. Every listing of
+        the vacancy is written, so the other boards do not report it as new.
         """
-        job = self._selected_job()
-        if not job:
+        item = self._selected()
+        if not item:
             return
+        job = item.job
         status = self.mark_status.get()
         with JobStore(self.db_path) as store:
-            if not store.is_seen(job):
-                store.mark_seen([job])
+            store.mark_seen(list(item.vacancy.listings))
             store.set_status(job.fingerprint, status, self.note_var.get().strip())
 
         selection = self.tree.selection()
@@ -354,14 +434,14 @@ class JobWatchGUI:
             return
         if not messagebox.askyesno(
             "jobwatch",
-            f"Mark {len(self.results)} job(s) as seen?\n\n"
+            f"Mark {len(self.results)} vacancy(ies) as seen?\n\n"
             "They will not appear in future 'new only' searches.",
         ):
             return
         with JobStore(self.db_path) as store:
-            store.mark_seen(self.results)
+            store.mark_seen([job for r in self.results for job in r.vacancy.listings])
         self.mark_btn.state(["disabled"])
-        self.status_text.set(f"Marked {len(self.results)} job(s) as seen.")
+        self.status_text.set(f"Marked {len(self.results)} vacancy(ies) as seen.")
 
     def on_export(self) -> None:
         out = Path(self.config.get("report_path", "reports"))
@@ -383,10 +463,15 @@ class JobWatchGUI:
         # clicking "Status" raised KeyError. A duplicated ordering is a fact
         # stated twice, and the copy that is not executed is the one that rots.
         index = list(self.tree["columns"]).index(column)
-        pairs = sorted(
-            zip(self.tree.get_children(""), self.results),
-            key=lambda pair: str(self.tree.item(pair[0], "values")[index]).lower(),
-        )
+        if column == "score":
+            # Numeric and best first. As text, "9" sorts above "72".
+            pairs = sorted(zip(self.tree.get_children(""), self.results),
+                           key=lambda pair: -pair[1].assessment.score)
+        else:
+            pairs = sorted(
+                zip(self.tree.get_children(""), self.results),
+                key=lambda pair: str(self.tree.item(pair[0], "values")[index]).lower(),
+            )
         self.results = [job for _, job in pairs]
         for position, (item, _) in enumerate(pairs):
             self.tree.move(item, "", position)

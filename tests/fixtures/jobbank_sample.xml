@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+	<title><![CDATA[help desk - Job Bank]]></title>
+	<id>https://www.jobbank.gc.ca/jobsearch/jobSearchRSSfeed</id>
+<entry>
+		<title type="html"><![CDATA[help desk technician]]></title>
+		<link rel="alternate" type="text/html" href="https://www.jobbank.gc.ca/jobsearch/jobposting/50411804"/>
+		<id>https://www.jobbank.gc.ca/jobsearch/jobSearchRSSfeed?id=10283753609</id>
+		<updated>2026-10-02T12:00:00Z</updated>
+		<summary type="html"><![CDATA[<strong>Job number:</strong> 10283753609<br /><strong>Location:</strong> Summerside (PE)  <br /><strong>Employer:</strong> MDS Coating Technologies Corporation<br /><strong>Salary:</strong> $55,000.00 to $65,000.00 annually]]></summary>
+	</entry>
+<entry>
+		<title type="html"><![CDATA[user support technician]]></title>
+		<link rel="alternate" type="text/html" href="https://www.jobbank.gc.ca/jobsearch/jobposting/50400001"/>
+		<id>https://www.jobbank.gc.ca/jobsearch/jobSearchRSSfeed?id=3687149</id>
+		<updated>2026-10-01T12:00:00Z</updated>
+		<summary type="html"><![CDATA[<strong>Job number:</strong> 3687149<br /><strong>Location:</strong> Montr&eacute;al (QC)<br />]]></summary>
+	</entry>
+</feed>

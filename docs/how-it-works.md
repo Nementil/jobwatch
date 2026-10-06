@@ -136,11 +136,26 @@ in SQLite, **and de-duplicates within the batch too** — two sources legitimate
 carry the same vacancy (a board and the company's own page), so without the
 in-batch set the first run after adding a source double-reports.
 
-### 7. Report, then record
+### 7. Group into vacancies and rank
 
-`report.py` renders console and markdown. Then `mark_seen()` writes the new
-fingerprints with `INSERT OR IGNORE`, so re-running after a crash mid-report is
-a no-op rather than an error.
+`ranking.py: rank_jobs()` turns the fresh listings into a ranked list:
+
+- `dedupe.group_listings()` merges listings with the same `vacancy_key`
+  (employer and title, decoration removed, URL left out), so one job on three
+  boards is one vacancy. Similar-but-not-equal titles are only flagged.
+- `JobStore.priors_for()` looks up what you already did about each vacancy, or
+  about a similar title at the same employer. This happens **before** the new
+  listings are recorded, or each one would find itself.
+- `ranking.assess()` scores each vacancy from 50: keywords in the title, boost
+  and seniority words, the language verdict from `language.py`, history and age.
+  Every adjustment is recorded as a reason.
+
+### 8. Report, then record
+
+`report.py` renders console and markdown, grouped by tier (worth applying, long
+shots, probably not viable). Then `mark_seen()` writes the new fingerprints with
+`INSERT OR IGNORE`, so re-running after a crash mid-report is a no-op rather than
+an error. A new listing of a vacancy you already acted on takes that status.
 
 `--dry` reports without recording. It exists because the first run of a new
 source is the one most likely to be wrong, and without it a bad selector
@@ -187,13 +202,13 @@ was not needed.
 
 ## Why the tests look like that
 
-106 offline tests by default, plus 14 GUI tests deselected unless you ask for
-them (`pytest -m gui`), plus separately-marked live ones.
+402 offline tests by default, plus 28 GUI tests deselected unless you ask for
+them (`pytest -m gui`), plus separately-marked browser and live ones.
 
-The 106 is pytest's count, not a count of `def test_` lines: `test_models.py`
-and `test_sources.py` are heavily parametrized, so 17 definitions expand to 37
-cases and 31 to 33. If anyone asks why the number does not match the file, that
-is why, and pytest's number is the correct one.
+The 402 is pytest's count, not a count of `def test_` lines: the model,
+source and language tests are heavily parametrized, so one definition often
+expands to several cases. If anyone asks why the number does not match the
+file, that is why, and pytest's number is the correct one.
 
 The `fetch`/`parse` split is what makes that possible. Every parser is a pure
 function, so it is tested against a **saved fixture** — a real payload captured

@@ -15,6 +15,9 @@ python -m jobwatch gui            # compact desktop UI (tkinter, no extra deps)
 python -m jobwatch run --dry      # collect and report, record nothing
 python -m jobwatch run            # record and write reports/<date>.md
 python -m jobwatch stats          # status breakdown, response rate, worklist
+python -m jobwatch capture        # save real ads to ads/ for labelling
+python -m jobwatch audit          # how often the language check agrees with you
+python -m jobwatch probe <url>    # find the card selector for a board with no feed
 
 python -m jobwatch mark Systematic applied --note "sent QA CV"
 python -m jobwatch mark Systematic rejected
@@ -43,18 +46,111 @@ want different fixes. `skipped` is tracked separately for the same reason: "I
 never saw it" and "I saw it and judged it wrong" are different facts.
 
 ```
-pytest              106 passed in 0.17s     offline: no network, no browser
-pytest -m gui        13 passed in 0.81s     needs a Tk display
+pytest              402 passed in 1.00s     offline: no network, no browser
+pytest -m gui        28 passed in 1.30s     needs a Tk display
 pytest -m live        3 passed in 13.2s     hits real boards
 ```
+
+## Viable first
+
+A list of every QA job in Denmark is not a list of jobs worth applying to. Each
+run groups what it found into **vacancies**, scores them 0-100, and sorts them
+into three tiers: *worth applying*, *long shots*, *probably not viable*. Every
+point comes with its reason next to the job, so a score can always be checked:
+
+```
+WORTH APPLYING (1)
+----------------------------------------------
+   85  IO Interactive A/S: QA Automation Engineer  [Copenhagen]
+       https://www.jobindex.dk/jobannonce/1
+       language: English workplace · also on: io-interactive
+       +15 'QA' in title; +15 mentions 'playwright', 'pytest'; +5 working language is English
+
+PROBABLY NOT VIABLE (1)
+----------------------------------------------
+    5  Netcompany A/S: Softwaretester  [Aarhus]
+       https://www.jobindex.dk/jobannonce/2
+       language: Needs Danish
+       +15 'softwaretester' in title; -60 ad requires Danish (you have basic Danish)
+```
+
+(Illustrative listings, not real postings.)
+
+**One vacancy, many boards.** The same role on Jobindex, It-jobbank and the
+studio's own Teamtailor feed is one row, naming the other boards. Listings are
+matched on employer and title with the decoration removed: `A/S`, `AB (publ)`,
+`Inc.`, `(m/k)`, `(H/F)`, case and accents. Setting a status on a vacancy sets it
+on every listing, a repost arriving later inherits it, and the response rate
+counts applications, not the boards that carried them. Titles that are only
+*similar* ("QA Engineer" and "QA Engineer - Copenhagen") are flagged as a possible
+duplicate and never merged, because a wrong merge hides a real job and a missed one
+only shows it twice.
+
+**Language is the filter a keyword list cannot be.** A Danish employer who wants
+fluent Danish will not read an English CV, so that application is a lottery
+ticket. `languages:` in the config lists what you can work in, in two tiers:
+`fluent`, and `basic` for a language you get by in but would not be hired on (the
+example config has English and Danish). The ad text is read
+clause by clause, in English, Danish, Swedish, German and the Romance languages:
+
+| The ad says | Verdict |
+|---|---|
+| "Fluent Danish is required", "Du taler og skriver dansk" | **unviable**, basic Danish included |
+| written in Danish, no word about English | **long shot** at best |
+| "Danish is a plus", "Svenska är meriterande" | small penalty |
+| "Our working language is English", "Danish not required" | small bonus |
+| "a Danish company", "Danish Crown" | nothing: a nationality, not a language |
+
+**History.** A vacancy you already applied to, were rejected from or skipped comes
+back as a repost with that said next to it, including when the title changed
+slightly.
+
+**Checking it against real ads.** `python -m jobwatch capture` saves every matching
+ad to `ads/` (gitignored: ad text is the employer's and may name a recruiter), with the
+detector's verdict in the header and `expected: ?` beside it. Replace the `?` with the
+right answer; from then on `pytest` checks that ad, and `python -m jobwatch audit`
+prints where the detector and you disagree.
+
+It is all heuristic, and it never hides anything: unviable jobs are listed last and
+greyed in the GUI, with a *Hide unviable* toggle that is off by default. Weights,
+boost words and seniority penalties are in the `ranking:` section of the config.
+
+## Configuration
+
+`config.yaml` holds the search; `config.private.yaml`, if present, is merged on top
+and is gitignored. A source a site allowed you personally to read, its cookie file,
+and notes naming people go in the private file, so the rest can be shared or
+published without editing anything out. Private sources merge by `name`, and
+`keywords+:` / `locations+:` append rather than replace
+(`config.private.example.yaml`).
+
+A source can carry its own `locations:`, which replaces the global list for that
+source's jobs only. That is how "Stockholm, but only for game studios" is written:
+Stockholm in the studio feeds' lists, not in the global one.
 
 ## Sources
 
 | Kind | How | Reach |
 |---|---|---|
 | Danish aggregators | RSS | `jobindex.dk` and `it-jobbank.dk`, arbitrary queries each |
-| Employer job boards | Teamtailor RSS, Greenhouse and Lever JSON | any company using one, which is most of them |
-| Client-rendered boards | Playwright | anything else, opt in only |
+| Swedish public job board | JobTech JSON (CC0 open data) | every ad on Arbetsförmedlingen's Platsbanken |
+| Remote boards | Remotive, Remote OK, Jobicy, Himalayas, Arbeitnow JSON; We Work Remotely RSS | remote jobs worldwide, restriction kept in the location |
+| Employer job boards | Teamtailor RSS; Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Breezy JSON | any company using one, which is most studios |
+| Games boards | Work With Indies RSS; gamesjobsdirect via Playwright | indie and studio roles, many remote |
+| Client-rendered boards | Playwright, robots.txt obeyed on every fetch | anything else, opt in only |
+
+**Only official endpoints.** Every source is one the site publishes for machine use,
+with no login and no terms against it. Remote OK's terms ask for a link back and the
+name "Remote OK" as the source; every report line links to the Remote OK listing and
+names the source. The new board parsers were written from each site's documentation,
+so run `pytest -m live` once before relying on them: it checks every board's real
+payload against its parser.
+
+**LinkedIn, Indeed and Glassdoor are left out on purpose.** None publishes a public
+feed, their terms forbid automated collection, and the "LinkedIn RSS" services that
+exist work by scraping it. The legal route is the job-alert e-mail LinkedIn sends you:
+set up an alert, and add those jobs with `jobwatch add` (reading the alert e-mails
+automatically is a planned source).
 
 The middle row is the one worth knowing about. Most employers do not run their own
 job board, they embed a hosted one, and every one of those publishes a public machine
@@ -77,7 +173,7 @@ decisions are all answers to problems the real market caused.
 ### Fetching is separated from parsing
 
 Every source splits into `fetch()`, which does IO, and `parse()`, which is pure.
-That split is the reason the test suite runs in **0.17 seconds with no network**.
+That split is the reason the test suite runs in **under a second with no network**.
 
 Suites that drive a live site instead are slow, flaky, and fail for reasons unrelated
 to the code under test, which trains a team to ignore red. Here the live checks are
@@ -85,7 +181,7 @@ three separately-marked tests whose only job is to notice that a board changed i
 markup, and the parsing logic they guard is covered offline against saved fixtures.
 
 ```bash
-pytest              # 106 offline tests, no network, no browser
+pytest              # 402 offline tests, no network, no browser
 pytest -m gui       # tkinter tests, needs a display
 pytest -m live      # contract checks against the real boards
 ```
@@ -160,15 +256,22 @@ than word-boundary matching.
 
 ```
 src/jobwatch/
-  models.py          Job, normalisation, fingerprinting
-  store.py           SQLite seen-set
-  report.py          pure rendering, no IO
+  models.py          Job, normalisation, fingerprinting, vacancy key
+  dedupe.py          listings -> vacancies, near-duplicates, history matching
+  language.py        ad language and stated language requirements
+  ranking.py         score, tier and the reason for every point
+  store.py           SQLite seen-set, status per vacancy
+  report.py          pure rendering by tier, no IO
   cli.py             argparse entry point
   gui.py             tkinter UI, worker thread + Queue
+  config.py          config.yaml + private overlay, per-source filtering
+  capture.py         save real ads, read labels back, audit
+  probe.py           render a page, rank candidate card selectors
   sources/
     base.py          Source ABC: fetch/parse split, failure isolation
-    rss.py           feedparser (also covers Teamtailor)
-    ats.py           Greenhouse and Lever JSON APIs
+    rss.py           feedparser (also covers Teamtailor, We Work Remotely)
+    ats.py           Greenhouse, Lever, Ashby, Workable, SmartRecruiters
+    boards.py        Remotive, Remote OK, Jobicy, Himalayas, Arbeitnow, JobTech
     browser.py       Playwright, Page Object Model
 tests/
   test_models.py     normalisation and identity
@@ -176,6 +279,13 @@ tests/
   test_sources.py    RSS and browser parsers, from fixtures
   test_ats.py        Greenhouse and Lever parsers, from fixtures
   test_report.py     rendering
+  test_dedupe.py     grouping, similar titles, history
+  test_language.py   requirement phrasing in five languages
+  test_ranking.py    tiers and order, not exact scores
+  test_vacancies.py  store, CLI and sources once listings group
+  test_boards.py     board and ATS parsers, from documented shapes
+  test_capture.py    capture, labels, audit
+  test_real_ads.py   the detector against ads you labelled
   test_gui.py        input parsing + row/results alignment (opt in)
   fixtures/          saved payloads
   live/              network + browser contract checks (opt in)
@@ -194,8 +304,12 @@ thread safe, so results come back through a `Queue` that the UI polls. Calling i
 from a worker appears to work and then crashes intermittently under load, which is the
 worst failure mode to ship.
 
+**One row per vacancy, best first.** Score, tier and language verdict are columns;
+selecting a row shows the reasons, the other boards carrying it and what you already
+did about it. Marking a row writes every listing of the vacancy.
+
 **Sorting reorders the results list alongside the tree rows.** A selected row is mapped
-back to a `Job` by index, so sorting one without the other opens the wrong vacancy: a
+back to a vacancy by index, so sorting one without the other opens the wrong vacancy: a
 silent wrong answer rather than a visible crash. That invariant is what `test_gui.py`
 mostly exists to pin.
 

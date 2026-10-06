@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Trimmed from the real feed at https://www.workwithindies.com/careers/rss.xml
+  (2026-10-02), five items chosen for their awkward cases:
+    - "Anywhere"                        -> Remote (Worldwide)
+    - a city                            -> kept as the location
+    - a timezone ("EET ± 2 hours")      -> Remote (...)
+    - "City or Remote"                  -> Remote (...)
+    - a leading space in the title, and a German-language summary
+-->
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
+<channel>
+<title>Work With Indies</title>
+<link>https://www.workwithindies.com</link>
+<item>
+<title>CM IMMERSIVE is hiring a QA Engineer to work from EET ± 2 hours</title>
+<link>https://www.workwithindies.com/careers/cm-immersive-qa-engineer</link>
+<description>We’re looking for a QA Engineer contractor who could cover live releases and titles in production. Tags: [QA &amp; CS] [Full Time]</description>
+<pubDate>Tue, 15 Sep 2026 00:00:00 GMT</pubDate>
+</item>
+<item>
+<title>Crytivo is hiring a QA Tester to work from UTC-3 hours</title>
+<link>https://www.workwithindies.com/careers/crytivo-qa-tester</link>
+<description>We are looking for an experienced QA Tester to help us test increasingly complex and interconnected gameplay systems in Autonomica as the project grows. Tags: [QA &amp; CS] [Full Time]</description>
+<pubDate>Mon, 17 Aug 2026 00:00:00 GMT</pubDate>
+</item>
+<item>
+<title>Torpor Games is hiring a Senior Gameplay Programmer (m/f/d) to work from Berlin, DE</title>
+<link>https://www.workwithindies.com/careers/torpor-games-senior-gameplay-programmer-m-f-d</link>
+<description>Torpor Games is seeking a Senior Gameplay Programmer to handle day-to-day gameplay implementation on The Conformist, a 3D RPG built in Unity. Tags: [Programming] [Full Time]</description>
+<pubDate>Mon, 28 Sep 2026 00:00:00 GMT</pubDate>
+</item>
+<item>
+<title> HexNest Games is hiring a Community Manager to work from Anywhere</title>
+<link>https://www.workwithindies.com/careers/hexnest-games-community-manager</link>
+<description>We’re looking for a Community Manager who can help us build and maintain the Birds of War community across Discord and social platforms. Tags: [Marketing &amp; Community] [Contract]</description>
+<pubDate>Fri, 04 Sep 2026 00:00:00 GMT</pubDate>
+</item>
+<item>
+<title>the Good Evil is hiring a Game-ProgrammiererIn C#/Unity (d/w/m) to work from Cologne, DE</title>
+<link>https://www.workwithindies.com/careers/the-good-evil-game-programmiererin-c-unity-d-w-m</link>
+<description>the Good Evil sucht einen Spieleentwickler mit Kenntnissen in C# und Unity für die Entwicklung von Spielen für Konsolen, mobile Plattformen und den PC. Tags: [Programming] [Full Time]</description>
+<pubDate>Thu, 03 Sep 2026 00:00:00 GMT</pubDate>
+</item>
+<item>
+<title>Elsewhere is hiring a Generative AI Game Developer to work from San Francisco, CA or Remote</title>
+<link>https://www.workwithindies.com/careers/elsewhere-generative-ai-game-developer</link>
+<description>Elsewhere is hiring an Generative AI Game Developer. Tags: [Programming] [Part Time]</description>
+<pubDate>Tue, 29 Sep 2026 00:00:00 GMT</pubDate>
+</item>
+</channel>
+</rss>

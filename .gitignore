@@ -17,3 +17,17 @@ reports/
 
 # Written by the GUI launcher when startup fails. Runtime artefact.
 jobwatch-startup.log
+
+# Ads saved by `jobwatch capture`. Employer text, may contain recruiter contacts.
+ads/
+
+# Pages saved by `jobwatch probe`.
+probe/
+
+# Private overlay: sources and notes that must not be published.
+config.private.yaml
+# PRIVATE, never commit. .jobwatch/ holds consent cookies (`jobwatch consent`),
+# config backups (personal search terms) and database backups (application history).
+.jobwatch/
+jobwatch.db.bak-*
+*.db.bak*

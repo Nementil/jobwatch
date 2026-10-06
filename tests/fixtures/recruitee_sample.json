@@ -1,0 +1,11 @@
+{"offers": [
+  {"id": 2700001, "title": "QA Engineer – Indoor Golf Simulation Experience", "slug": "qa-engineer-indoor-golf-simulation-experience",
+   "careers_url": "https://careers.trackman.com/o/qa-engineer-indoor-golf-simulation-experience",
+   "company_name": "Trackman A/S", "city": "Hørsholm", "country": "Denmark", "location": "Hørsholm, Denmark",
+   "remote": "False", "department": "Software", "published_at": "2026-07-08 09:00:00 UTC",
+   "description": "<p>Ensure new features meet <strong>Trackman&rsquo;s</strong> standards.</p>",
+   "requirements": "<ul><li>Experience with Python and pytest</li></ul>"},
+  {"id": 2700002, "title": "Support Specialist", "slug": "support-specialist", "company_name": "Trackman A/S",
+   "city": "Stamford", "country": "United States", "remote": "True", "published_at": "2026-09-30 10:15:24 UTC",
+   "description": "", "requirements": ""}
+]}

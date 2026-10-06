@@ -18,15 +18,35 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import yaml
 
+from .config import attach_locations, collect_matching
+from .config import load as load_config
 from .models import Job
+from .ranking import RankingSettings, rank_jobs
 from .report import render_console, render_markdown
-from .sources import (BrowserSource, GreenhouseSource, LeverSource, RSSSource,
-                      Source, filter_jobs)
+from .sources import (ArbeitnowSource, AshbySource, BreezySource, BrowserSource, GreenhouseSource, RecruiteeSource,
+                      HimalayasSource, JobBankSource, JobicySource, JobTechSource, LeverSource,
+                      RemoteOKSource, RemotiveSource, RSSSource, SmartRecruitersSource,
+                      Source, WorkableSource, filter_jobs)
 from .store import STATUSES, JobStore
 
 log = logging.getLogger("jobwatch")
+
+
+#: Employer job boards: one company each, identified by a slug.
+ATS_TYPES = {
+    "greenhouse": GreenhouseSource, "lever": LeverSource, "ashby": AshbySource,
+    "workable": WorkableSource, "smartrecruiters": SmartRecruitersSource,
+    "breezy": BreezySource, "recruitee": RecruiteeSource,
+}
+
+#: Multi-employer boards with an official keyless API. Extra config keys
+#: (category, geo, limit, remote_only, ...) are passed through as options.
+BOARD_TYPES = {
+    "remotive": RemotiveSource, "remoteok": RemoteOKSource, "jobicy": JobicySource,
+    "himalayas": HimalayasSource, "arbeitnow": ArbeitnowSource, "jobtech": JobTechSource,
+    "jobbank": JobBankSource,
+}
 
 
 def build_sources(config: dict) -> list[Source]:
@@ -36,6 +56,7 @@ def build_sources(config: dict) -> list[Source]:
         if not entry.get("enabled", True):
             continue
         kind = entry.get("type", "rss")
+        built = len(sources)
         try:
             if kind == "rss":
                 sources.append(
@@ -44,6 +65,8 @@ def build_sources(config: dict) -> list[Source]:
                         url=entry["url"],
                         default_company=entry.get("company", ""),
                         company_in_title=entry.get("company_in_title", False),
+                        company_before_colon=entry.get("company_before_colon", False),
+                        title_pattern=entry.get("title_pattern", ""),
                     )
                 )
             elif kind == "browser":
@@ -55,60 +78,66 @@ def build_sources(config: dict) -> list[Source]:
                         headless=entry.get("headless", True),
                     )
                 )
-            elif kind == "greenhouse":
+            elif kind in ATS_TYPES:
+                extra = {}
+                if kind == "smartrecruiters":
+                    extra = {k: entry[k] for k in ("city", "country", "query") if entry.get(k)}
+                elif kind == "recruitee" and entry.get("base_url"):
+                    extra = {"base_url": entry["base_url"]}
                 sources.append(
-                    GreenhouseSource(
+                    ATS_TYPES[kind](
                         name=entry["name"],
                         slug=entry["slug"],
                         company=entry.get("company", ""),
+                        **extra,
                     )
                 )
-            elif kind == "lever":
+            elif kind in BOARD_TYPES:
+                options = {k: v for k, v in entry.items()
+                           if k not in ("name", "type", "query", "enabled")}
                 sources.append(
-                    LeverSource(
-                        name=entry["name"],
-                        slug=entry["slug"],
-                        company=entry.get("company", ""),
-                    )
+                    BOARD_TYPES[kind](name=entry["name"], query=entry.get("query", ""), **options)
                 )
             else:
                 log.warning("unknown source type %r for %r, skipping", kind, entry.get("name"))
+            if built < len(sources):
+                attach_locations(sources[-1], entry)
         except KeyError as exc:
-            log.error("source %r missing required key %s, skipping", entry.get("name"), exc)
+            hint = ""
+            if kind in ATS_TYPES and str(exc).strip("'") == "slug":
+                hint = (f" ({kind} needs `slug:`, the company's name in its careers URL; "
+                        "see the ATS list in config.example.yaml)")
+            log.error("source %r missing required key %s, skipping%s", entry.get("name"), exc, hint)
     return sources
 
 
 def run(config: dict, db_path: str, dry: bool) -> int:
-    keywords = config.get("keywords", [])
-    locations = config.get("locations", [])
-    exclude_keywords = config.get("exclude_keywords", [])
-    exclude_companies = config.get("exclude_companies", [])
     retain_days = int(config.get("retain_days", 180))
 
-    collected: list[Job] = []
-    for source in build_sources(config):
-        collected.extend(source.collect())
-
-    log.info("collected %d jobs before filtering", len(collected))
-    matched = filter_jobs(
-        collected, keywords, locations, exclude_keywords, exclude_companies
-    )
+    matched, collected = collect_matching(config)
+    log.info("collected %d jobs before filtering", collected)
     # Both numbers, always. "27 matched" alone cannot tell a working filter
     # from one that excluded the entire market, and those look identical in a
     # quiet week.
     log.info(
-        "%d matched (%d dropped by filters)", len(matched), len(collected) - len(matched)
+        "%d matched (%d dropped by filters)", len(matched), collected - len(matched)
     )
 
+    settings = RankingSettings.from_config(config)
+    today = date.today()
     with JobStore(db_path) as store:
         fresh = store.new_jobs(matched)
-        print(render_console(fresh, date.today()))
+        # Ranked BEFORE the fresh listings are recorded: the history lookup is
+        # what says "you applied to this in September", and once these rows
+        # are written every one of them would be its own history.
+        ranked = rank_jobs(fresh, settings, store, today)
+        print(render_console(ranked, today))
         if not dry and fresh:
             store.mark_seen(fresh)
             out = Path(config.get("report_path", "reports"))
             out.mkdir(parents=True, exist_ok=True)
-            report_file = out / f"{date.today().isoformat()}.md"
-            report_file.write_text(render_markdown(fresh, date.today()), encoding="utf-8")
+            report_file = out / f"{today.isoformat()}.md"
+            report_file.write_text(render_markdown(ranked, today), encoding="utf-8")
             log.info("wrote %s", report_file)
         if not dry and retain_days > 0:
             removed = store.prune_before(date.today() - timedelta(days=retain_days))
@@ -117,12 +146,38 @@ def run(config: dict, db_path: str, dry: bool) -> int:
     return 0
 
 
+def capture(config: dict, out: str) -> int:
+    """Save every matching ad for labelling. See capture.py."""
+    from . import capture as cap
+    from .dedupe import group_listings
+    from .language import LanguageProfile
+
+    vacancies = group_listings(collect_matching(config)[0])
+    written, existing = cap.save(vacancies, Path(out), LanguageProfile.from_config(config))
+    print(f"{written} ad(s) written to {out}/, {existing} already there (left untouched).")
+    if written:
+        print("Open them, set `expected:` in each header, then run "
+              "`python -m jobwatch audit` or `pytest`.")
+    return 0
+
+
+def audit_ads(config: dict, out: str) -> int:
+    from . import capture as cap
+    from .language import LanguageProfile
+
+    ads = cap.load_all([Path(out), Path("tests/fixtures/ads")])
+    print("\n".join(cap.audit(ads, LanguageProfile.from_config(config))))
+    return 0
+
+
 def stats(db_path: str) -> int:
     with JobStore(db_path) as store:
         counts = store.status_counts()
         applied, answered, rate = store.response_rate()
 
-        print(f"{store.count()} job(s) recorded in {db_path}")
+        listings, vacancies = store.count(), store.vacancy_count()
+        merged = f" ({listings} listings)" if listings != vacancies else ""
+        print(f"{vacancies} vacancy(ies) recorded in {db_path}{merged}")
         print("  " + "  ".join(f"{name}={counts[name]}" for name in STATUSES))
         if applied:
             print(f"  response rate: {answered}/{applied} = {rate:.0%}")
@@ -138,7 +193,8 @@ def stats(db_path: str) -> int:
             print(f"unactioned ({len(pending)}):")
             for row in pending[:20]:
                 where = f" [{row['location']}]" if row["location"] else ""
-                print(f"  {row['fingerprint'][:8]}  {row['company']}: {row['title']}{where}")
+                boards = f"  ({row['listings']} boards)" if row["listings"] > 1 else ""
+                print(f"  {row['fingerprint'][:8]}  {row['company']}: {row['title']}{where}{boards}")
             if len(pending) > 20:
                 print(f"  ... and {len(pending) - 20} more")
     return 0
@@ -157,14 +213,17 @@ def mark(db_path: str, needle: str, status: str, note: str = "") -> int:
         if not rows:
             log.error("nothing matches %r", needle)
             return 1
-        if len(rows) > 1:
+        # Several listings of ONE vacancy are not ambiguous: the status
+        # applies to all of them anyway (JobStore.set_status).
+        if len({r["vacancy_key"] for r in rows}) > 1:
             log.error("%r matches %d jobs, be more specific:", needle, len(rows))
             for row in rows[:10]:
                 print(f"  {row['fingerprint'][:8]}  {row['company']}: {row['title']}")
             return 1
         row = rows[0]
         store.set_status(row["fingerprint"], status, note)
-        print(f"{status}: {row['company']}: {row['title']}")
+        boards = f" ({len(rows)} listings)" if len(rows) > 1 else ""
+        print(f"{status}: {row['company']}: {row['title']}{boards}")
     return 0
 
 
@@ -193,6 +252,8 @@ def add(db_path: str, company: str, title: str, url: str = "",
         # second row: two rows for one application would silently inflate the
         # denominator of the response rate.
         existed = store.is_seen(job)
+        others = [r for r in store.find(job.company)
+                  if r["vacancy_key"] == job.vacancy_key and r["fingerprint"] != job.fingerprint]
         if not existed:
             store.mark_seen([job])
         store.set_status(job.fingerprint, status, note)
@@ -201,6 +262,11 @@ def add(db_path: str, company: str, title: str, url: str = "",
     where = f" [{job.location}]" if job.location else ""
     print(f"{verb}: {job.company}: {job.title}{where}")
     print(f"  status={status}  fingerprint={job.fingerprint[:8]}")
+    if others:
+        # The same vacancy already came in through a feed. It is one job, so
+        # the status was applied to those listings too.
+        boards = ", ".join(sorted({r["source"] for r in others}))
+        print(f"  same vacancy as {len(others)} listing(s) from {boards}: marked {status} too")
     if not url:
         # The fingerprint is company|title|url, so two postings with the same
         # title at one employer collide when neither carries a URL. Worth
@@ -213,8 +279,11 @@ def add(db_path: str, company: str, title: str, url: str = "",
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jobwatch", description="Job board monitor.")
-    parser.add_argument("command", choices=["run", "stats", "gui", "mark", "add"])
-    parser.add_argument("needle", nargs="?", help="mark: text identifying the job")
+    parser.add_argument("command",
+                        choices=["run", "stats", "gui", "mark", "add", "capture", "audit",
+                                 "probe"])
+    parser.add_argument("needle", nargs="?",
+                        help="mark: text identifying the job; probe: the page URL")
     parser.add_argument("status", nargs="?", choices=STATUSES,
                         help="mark: the status to move it to")
     parser.add_argument("--note", default="", help="free text stored with the status")
@@ -230,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-c", "--config", default="config.yaml")
     parser.add_argument("--db", default="jobwatch.db")
     parser.add_argument("--dry", action="store_true", help="report without recording")
+    parser.add_argument("--out", default="ads", help="capture/audit: folder for saved ads")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -240,6 +310,29 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "stats":
         return stats(args.db)
+
+    if args.command == "probe":
+        if not args.needle:
+            log.error("usage: jobwatch probe <url>")
+            return 2
+        from .probe import probe
+        try:
+            candidates = probe(args.needle, Path("probe"))
+        except PermissionError as exc:
+            log.error("%s", exc)
+            return 1
+        print("saved probe/page.html and probe/page.png")
+        print("card selector candidates (matches, selector, first match):")
+        for c in candidates:
+            print("  " + c.line)
+            if c.preview:
+                print(f"        -> {c.usable}/{c.count} usable as jobs; first cards read as:")
+                for title, company, location in c.preview:
+                    print(f"           title={title[:40]!r} company={company[:25]!r} "
+                          f"location={location[:20]!r}")
+        if not candidates:
+            print("  none: the page may need longer to render, or a login")
+        return 0
 
     if args.command == "add":
         if not args.company or not args.title:
@@ -261,10 +354,17 @@ def main(argv: list[str] | None = None) -> int:
         return gui_main(args.config, args.db)
 
     config_path = Path(args.config)
+    if args.command == "audit" and not config_path.exists():
+        # Auditing reads saved files only; the default language profile will do.
+        return audit_ads({}, args.out)
     if not config_path.exists():
         log.error("config not found: %s (copy config.example.yaml)", config_path)
         return 2
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    config = load_config(config_path)
+    if args.command == "capture":
+        return capture(config, args.out)
+    if args.command == "audit":
+        return audit_ads(config, args.out)
     return run(config, args.db, args.dry)
 
 
