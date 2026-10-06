@@ -88,8 +88,9 @@ only shows it twice.
 
 **Language is the filter a keyword list cannot be.** A Danish employer who wants
 fluent Danish will not read an English CV, so that application is a lottery
-ticket. `languages:` in the config lists what you can work in (the default is
-English, French, Italian and Spanish, plus basic Danish). The ad text is read
+ticket. `languages:` in the config lists what you can work in, in two tiers:
+`fluent`, and `basic` for a language you get by in but would not be hired on (the
+example config has English and Danish). The ad text is read
 clause by clause, in English, Danish, Swedish, German and the Romance languages:
 
 | The ad says | Verdict |
