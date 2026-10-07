@@ -27,7 +27,7 @@ from .report import render_console, render_markdown
 from .sources import (ArbeitnowSource, AshbySource, BreezySource, BrowserSource, GreenhouseSource, RecruiteeSource,
                       HimalayasSource, JobBankSource, JobicySource, JobTechSource, LeverSource,
                       RemoteOKSource, RemotiveSource, RSSSource, SmartRecruitersSource,
-                      Source, WorkableSource, filter_jobs)
+                      Source, SuccessFactorsSource, WorkableSource, filter_jobs)
 from .store import STATUSES, JobStore
 
 log = logging.getLogger("jobwatch")
@@ -45,7 +45,7 @@ ATS_TYPES = {
 BOARD_TYPES = {
     "remotive": RemotiveSource, "remoteok": RemoteOKSource, "jobicy": JobicySource,
     "himalayas": HimalayasSource, "arbeitnow": ArbeitnowSource, "jobtech": JobTechSource,
-    "jobbank": JobBankSource,
+    "jobbank": JobBankSource, "successfactors": SuccessFactorsSource,
 }
 
 

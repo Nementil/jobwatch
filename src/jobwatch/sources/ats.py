@@ -451,3 +451,123 @@ class RecruiteeSource(Source):
             except ValueError:
                 continue
         return jobs
+
+
+# ISO 3166 codes SuccessFactors puts after the city ("Nordborg, DK"). Location
+# filters are written with country names, so the code is spelled out.
+_COUNTRY_CODES = {
+    "AT": "Austria", "BE": "Belgium", "BG": "Bulgaria", "CA": "Canada", "CH": "Switzerland",
+    "CN": "China", "CZ": "Czechia", "DE": "Germany", "DK": "Denmark", "EE": "Estonia",
+    "ES": "Spain", "FI": "Finland", "FR": "France", "GB": "United Kingdom", "GR": "Greece",
+    "HR": "Croatia", "HU": "Hungary", "IE": "Ireland", "IN": "India", "IT": "Italy",
+    "LT": "Lithuania", "LU": "Luxembourg", "LV": "Latvia", "MT": "Malta", "MX": "Mexico",
+    "NL": "Netherlands", "NO": "Norway", "PL": "Poland", "PT": "Portugal", "RO": "Romania",
+    "SE": "Sweden", "SI": "Slovenia", "SK": "Slovakia", "US": "United States",
+}
+
+
+class SuccessFactorsSource(Source):
+    """SAP SuccessFactors career sites (Recruiting Marketing), e.g. jobs.danfoss.com.
+
+    Their search results and RSS feeds live under /services/, which these sites'
+    robots.txt disallows, so neither is used. What robots.txt allows is
+    /sitemap.xml, listing every job page, and the /job/ pages themselves.
+
+    A sitemap of a large employer lists hundreds of jobs worldwide, and fetching
+    every page daily would be rude. Each job URL carries a slug made of the city
+    and the title ("Nordborg-Software-Test-Engineer"), so only URLs with a slug
+    word starting with one of `query`'s words are fetched, at most `detail_limit`
+    of them, with the usual delay between requests. A slug word is a prefilter,
+    not the filter: the real title from the page goes through the normal
+    keyword filter afterwards.
+    """
+
+    def __init__(self, name: str, query: str = "", base_url: str = "", company: str = "",
+                 detail_limit: int = 40) -> None:
+        if not base_url:
+            raise KeyError("base_url")
+        self.name = name
+        self.base_url = base_url.rstrip("/")
+        self.company = company
+        self.words = tuple(w.lower() for w in str(query).replace(",", " ").split())
+        self.detail_limit = int(detail_limit)
+
+    def wanted(self, url: str) -> bool:
+        import re
+        import urllib.parse
+
+        m = re.search(r"/job/([^/]+)/\d+/?$", url)
+        if not m:
+            return False
+        tokens = re.split(r"[^a-z0-9]+", urllib.parse.unquote(m.group(1)).lower())
+        return not self.words or any(t.startswith(w) for t in tokens if t for w in self.words)
+
+    def job_urls(self, sitemap: str) -> list[str]:
+        import html
+        import re
+
+        urls = [html.unescape(u) for u in re.findall(r"<loc>\s*(.*?)\s*</loc>", sitemap)]
+        return [u for u in urls if self.wanted(u)]
+
+    def fetch(self) -> str:
+        sitemap = _fetch_json(f"{self.base_url}/sitemap.xml", self.rate_limit_seconds)
+        pages: dict[str, str] = {}
+        for url in self.job_urls(sitemap)[: self.detail_limit]:
+            try:
+                pages[url] = _fetch_json(url, self.rate_limit_seconds)
+            except OSError:
+                continue          # one unreachable page costs that job, not the run
+        return json.dumps(pages)
+
+    @staticmethod
+    def _plain(fragment: str) -> str:
+        import html
+        import re
+
+        fragment = re.sub(r"<script.*?</script>|<style.*?</style>", " ", fragment, flags=re.S)
+        return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", fragment)).split())
+
+    @classmethod
+    def location(cls, page: str) -> str:
+        import re
+
+        m = re.search(r"Job Location:\s*</span>\s*<span[^>]*>(.*?)</span>", page, re.S)
+        if not m:
+            return ""
+        # Multi-site jobs list several places ("Neumuenster, DE, Nordborg, DK"): every
+        # code is spelled out, except one followed by "US", which is a US state
+        # ("Wilmington, DE, US" is Delaware, not Germany).
+        parts = cls._plain(m.group(1)).split(", ")
+        return ", ".join(
+            _COUNTRY_CODES[p] if p in _COUNTRY_CODES and i > 0
+            and (i + 1 == len(parts) or parts[i + 1] not in ("US", "United States")) else p
+            for i, p in enumerate(parts))
+
+    def parse_page(self, url: str, page: str) -> Job | None:
+        import re
+
+        # Live pages carry a script that queries '[itemprop="title"]'; matched
+        # first, it made the script text the job title. Scripts go before anything.
+        page = re.sub(r"<script.*?</script>", " ", page, flags=re.S)
+        title = re.search(r'itemprop="title"[^>]*>(.*?)</span>', page, re.S)
+        if not title:
+            return None
+        desc = re.search(r'itemprop="description"[^>]*>(.*?)(?:<div class="joblayouttoken|$)', page, re.S)
+        try:
+            return Job(
+                title=self._plain(title.group(1)),
+                company=self.company or self.base_url.split("//")[-1],
+                url=url,
+                source=self.name,
+                location=self.location(page),
+                description=self._plain(desc.group(1)) if desc else "",
+            )
+        except ValueError:
+            return None
+
+    def parse(self, payload: str) -> list[Job]:
+        pages = json.loads(payload)
+        if not isinstance(pages, dict):
+            return []
+        jobs = [self.parse_page(url, page) for url, page in pages.items() if isinstance(page, str)]
+        return [j for j in jobs if j is not None]

@@ -315,6 +315,17 @@ sources:
   #   jobs.lever.co/<slug>                 ->  type: lever
   #   <slug>.breezy.hr                     ->  type: breezy
   #   <slug>.teamtailor.com                ->  type: rss, url .../jobs.rss
+  #   <slug>.recruitee.com (or a custom domain serving /api/offers/)
+  #                                        ->  type: recruitee (base_url: for the custom domain)
+  #   a SAP SuccessFactors site (page source mentions "successfactors"/"rmk")
+  #                                        ->  type: successfactors, base_url: + query:
+  #       Reads /sitemap.xml and fetches only job pages whose link has a
+  #       `query` word, at most `detail_limit` of them (default 40).
+  # - name: big-employer
+  #   type: successfactors
+  #   base_url: https://jobs.example.com
+  #   company: Big Employer
+  #   query: "test qa software support"
   # - name: some-studio
   #   type: ashby
   #   slug: somestudio
