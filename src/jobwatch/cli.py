@@ -170,14 +170,16 @@ def audit_ads(config: dict, out: str) -> int:
     return 0
 
 
-def stats(db_path: str) -> int:
+def stats(db_path: str, since: date | None = None) -> int:
     with JobStore(db_path) as store:
-        counts = store.status_counts()
-        applied, answered, rate = store.response_rate()
+        counts = store.status_counts(since)
+        applied, answered, rate = store.response_rate(since)
 
         listings, vacancies = store.count(), store.vacancy_count()
         merged = f" ({listings} listings)" if listings != vacancies else ""
         print(f"{vacancies} vacancy(ies) recorded in {db_path}{merged}")
+        if since is not None:
+            print(f"  since {since.isoformat()}:")
         print("  " + "  ".join(f"{name}={counts[name]}" for name in STATUSES))
         if applied:
             print(f"  response rate: {answered}/{applied} = {rate:.0%}")
@@ -228,7 +230,8 @@ def mark(db_path: str, needle: str, status: str, note: str = "") -> int:
 
 
 def add(db_path: str, company: str, title: str, url: str = "",
-        location: str = "", status: str = "applied", note: str = "") -> int:
+        location: str = "", status: str = "applied", note: str = "",
+        on: date | None = None) -> int:
     """Record a job the feeds never saw.
 
     Most of what gets applied to is not found by this tool: a posting someone
@@ -256,7 +259,11 @@ def add(db_path: str, company: str, title: str, url: str = "",
                   if r["vacancy_key"] == job.vacancy_key and r["fingerprint"] != job.fingerprint]
         if not existed:
             store.mark_seen([job])
-        store.set_status(job.fingerprint, status, note)
+        store.set_status(job.fingerprint, status, note, on=on)
+        if on is not None:
+            # A past application: first seen no later than it was sent, so the
+            # record reads in the right order next to what the feeds found.
+            store.backdate(job.fingerprint, on)
 
     verb = "updated" if existed else "added"
     where = f" [{job.location}]" if job.location else ""
@@ -296,6 +303,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--location", default="", help="add: where the job is")
     parser.add_argument("--as", dest="new_status", choices=STATUSES, default="applied",
                         help="add: status to record (default: applied)")
+    parser.add_argument("--date", default="",
+                        help="add: date it happened, YYYY-MM-DD (for past applications)")
+    parser.add_argument("--since", default="",
+                        help="stats: count only statuses set on or after YYYY-MM-DD")
     parser.add_argument("-c", "--config", default="config.yaml")
     parser.add_argument("--db", default="jobwatch.db")
     parser.add_argument("--dry", action="store_true", help="report without recording")
@@ -308,8 +319,16 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)-7s %(name)s: %(message)s",
     )
 
+    def day(value: str, flag: str) -> date | None:
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            raise SystemExit(f"jobwatch: {flag} expects YYYY-MM-DD, got {value!r}")
+
     if args.command == "stats":
-        return stats(args.db)
+        return stats(args.db, day(args.since, "--since"))
 
     if args.command == "probe":
         if not args.needle:
@@ -341,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
                       "|".join(STATUSES))
             return 2
         return add(args.db, args.company, args.title, args.url,
-                   args.location, args.new_status, args.note)
+                   args.location, args.new_status, args.note, day(args.date, "--date"))
 
     if args.command == "mark":
         if not args.needle or not args.status:
