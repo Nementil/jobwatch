@@ -278,7 +278,8 @@ class JobStore:
                 (latest["status"], latest["status_at"], latest["note"], key),
             )
 
-    def set_status(self, fingerprint: str, status: str, note: str = "") -> bool:
+    def set_status(self, fingerprint: str, status: str, note: str = "",
+                   on: date | None = None) -> bool:
         """Move one job to `status`. Returns False if nothing matched.
 
         Returning a bool rather than raising because the caller is a CLI
@@ -300,10 +301,18 @@ class JobStore:
         self._conn.execute(
             "UPDATE seen_jobs SET status = ?, status_at = ?, note = ? "
             "WHERE fingerprint = ? OR (vacancy_key = ? AND vacancy_key != '')",
-            (status, date.today().isoformat(), note, fingerprint, row["vacancy_key"]),
+            (status, (on or date.today()).isoformat(), note, fingerprint, row["vacancy_key"]),
         )
         self._conn.commit()
         return True
+
+    def backdate(self, fingerprint: str, day: date) -> None:
+        """Set when a manually entered job was first seen, for past applications."""
+        self._conn.execute(
+            "UPDATE seen_jobs SET first_seen = ? WHERE fingerprint = ? AND first_seen > ?",
+            (day.isoformat(), fingerprint, day.isoformat()),
+        )
+        self._conn.commit()
 
     def find(self, needle: str) -> list[sqlite3.Row]:
         """Jobs whose fingerprint, company, title or url contains `needle`.
@@ -333,7 +342,7 @@ class JobStore:
             (status,),
         ))
 
-    def status_counts(self) -> dict[str, int]:
+    def status_counts(self, since: date | None = None) -> dict[str, int]:
         """How many jobs sit in each status, including the empty ones.
 
         Zeroes are included deliberately. A status missing from the output is
@@ -343,13 +352,20 @@ class JobStore:
         counts = {name: 0 for name in STATUSES}
         # Vacancies, not listings: one application seen on three boards is
         # one application, or the response rate's denominator triples.
+        # `since` scopes one search campaign: an earlier campaign imported for
+        # repost detection must not blend into this one's response rate.
+        # Untouched jobs have no status date and always count.
+        where, params = "", ()
+        if since is not None:
+            where, params = " WHERE status = 'new' OR status_at >= ?", (since.isoformat(),)
         for row in self._conn.execute(
-            "SELECT status, COUNT(DISTINCT vacancy_key) AS n FROM seen_jobs GROUP BY status"
+            "SELECT status, COUNT(DISTINCT vacancy_key) AS n FROM seen_jobs"
+            + where + " GROUP BY status", params
         ):
             counts[row["status"]] = row["n"]
         return counts
 
-    def response_rate(self) -> tuple[int, int, float]:
+    def response_rate(self, since: date | None = None) -> tuple[int, int, float]:
         """(applied, answered, rate) where answered is any reply at all.
 
         A rejection is a RESPONSE. Counting only interviews would measure a
@@ -357,20 +373,26 @@ class JobStore:
         this is for: whether anyone is reading them at all. Silence and
         rejection fail for different reasons and want different fixes.
         """
-        counts = self.status_counts()
+        counts = self.status_counts(since)
         applied = counts["applied"] + counts["rejected"] + counts["interview"] + counts["offer"]
         answered = counts["rejected"] + counts["interview"] + counts["offer"]
         return applied, answered, (answered / applied) if applied else 0.0
 
     def prune_before(self, cutoff: date) -> int:
-        """Drop seen-records first observed before `cutoff`.
+        """Drop untouched seen-records first observed before `cutoff`.
 
-        Without this the database grows forever. Pruning is safe because a
-        vacancy older than the cutoff has either been filled or is stale
-        enough that re-reporting it once is not a defect.
+        Without this the database grows forever. Pruning an untouched record
+        is safe because a vacancy older than the cutoff has either been
+        filled or is stale enough that re-reporting it once is not a defect.
+
+        Only `new` rows go. Anything the user acted on is the application
+        history: it feeds the response rate and the repost warning ("you
+        applied to this in March"), and losing it after 180 days would make
+        both quietly wrong in exactly the long search they exist for.
         """
         cur = self._conn.execute(
-            "DELETE FROM seen_jobs WHERE first_seen < ?", (cutoff.isoformat(),)
+            "DELETE FROM seen_jobs WHERE first_seen < ? AND status = 'new'",
+            (cutoff.isoformat(),),
         )
         self._conn.commit()
         return cur.rowcount or 0
