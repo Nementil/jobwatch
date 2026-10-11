@@ -76,6 +76,8 @@ def build_sources(config: dict) -> list[Source]:
                         url=entry["url"],
                         card_selector=entry["card_selector"],
                         headless=entry.get("headless", True),
+                        storage_state=entry.get("storage_state"),
+                        fields=entry.get("selectors"),
                     )
                 )
             elif kind in ATS_TYPES:
@@ -284,10 +286,46 @@ def add(db_path: str, company: str, title: str, url: str = "",
     return 0
 
 
+def consent(source_name: str | None, config_path: str) -> int:
+    """Open a visible browser so the user can answer a board's consent dialog once.
+
+    Separate command rather than something `run` does on demand, and that is the
+    point: a scheduled run must never be able to answer a consent dialog by
+    itself. This asks a person, in a window they can see, and saves the result
+    for later headless runs to reuse.
+    """
+    if not source_name:
+        log.error("consent: name a source, e.g. `jobwatch consent thehub`")
+        return 2
+    cfg_path = Path(config_path)
+    if not cfg_path.exists():
+        log.error("config not found: %s (copy config.example.yaml)", cfg_path)
+        return 2
+    # Same loader as `run`, so a board defined in config.private.yaml is found too.
+    config = load_config(cfg_path)
+    entry = next((e for e in config.get("sources", [])
+                  if e.get("name") == source_name), None)
+    if entry is None:
+        log.error("consent: no source called %r in %s", source_name, config_path)
+        return 2
+    if entry.get("type") != "browser":
+        log.error("consent: %r is a %r source; only browser sources have a consent "
+                  "dialog to answer", source_name, entry.get("type", "rss"))
+        return 2
+    out = entry.get("storage_state")
+    if not out:
+        log.error("consent: %r has no storage_state path in %s. Add one, e.g. "
+                  "storage_state: .jobwatch/%s-state.json",
+                  source_name, config_path, source_name)
+        return 2
+    from .sources.browser import save_consent_state
+    return 0 if save_consent_state(entry["url"], out) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jobwatch", description="Job board monitor.")
     parser.add_argument("command",
-                        choices=["run", "stats", "gui", "mark", "add", "capture", "audit",
+                        choices=["run", "stats", "gui", "mark", "add", "consent", "capture", "audit",
                                  "probe"])
     parser.add_argument("needle", nargs="?",
                         help="mark: text identifying the job; probe: the page URL")
@@ -326,6 +364,9 @@ def main(argv: list[str] | None = None) -> int:
             return date.fromisoformat(value)
         except ValueError:
             raise SystemExit(f"jobwatch: {flag} expects YYYY-MM-DD, got {value!r}")
+
+    if args.command == "consent":
+        return consent(args.needle, args.config)
 
     if args.command == "stats":
         return stats(args.db, day(args.since, "--since"))

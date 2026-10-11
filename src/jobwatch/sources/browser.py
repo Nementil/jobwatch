@@ -8,6 +8,14 @@ it is used for here.
 Structure follows the Page Object Model: `JobBoardPage` owns *how* to reach
 and read the page, and the parsing of the extracted rows is a separate pure
 function that tests can drive with a saved fixture and no browser at all.
+
+Permission, because "it renders client-side" is a reason to need a browser and
+not a reason to be allowed one. This source was written and then left disabled,
+because The Hub's terms did not clearly permit it and a capability is not a
+licence. On 2026-09-21 they were asked directly and said yes, so the
+maintainer's own config.yaml enables it and config.example.yaml does not: the
+permission is personal and revocable, so a clone does not inherit it. If you are
+reading this because you want the source, send them an email. It took one.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ import urllib.parse
 import urllib.request
 import urllib.robotparser
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..models import Job
@@ -107,9 +116,30 @@ class JobBoardPage:
     tells you it happened.
     """
 
-    def __init__(self, page: "Page", card_selector: str) -> None:
+    #: Fallback field selectors, tried in order. They are heuristics that happen to
+    #: fit boards naming things "title"/"company"/"location", and nothing more.
+    DEFAULT_FIELDS = {
+        "title": ['[class*="title"]', "h2", "h3", "a"],
+        "company": ['[class*="company"]', '[class*="employer"]', "h4"],
+        "location": ['[class*="location"]', '[class*="city"]'],
+    }
+
+    def __init__(
+        self,
+        page: "Page",
+        card_selector: str,
+        fields: dict[str, list[str]] | None = None,
+    ) -> None:
         self.page = page
         self.card_selector = card_selector
+        # Per-board overrides, because the heuristics above are a guess that runs
+        # out. The Hub puts the company and the location in two unclassed <span>s
+        # inside one .bullet-inline-list, which no amount of '[class*="company"]'
+        # will ever find: the generic pass fell through to <a> and returned the
+        # whole card as the title, with company and location empty (2026-09-21).
+        # A wrong-but-plausible title is worse than none, because it looks like
+        # data and dedupes against nothing.
+        self.fields = {**self.DEFAULT_FIELDS, **(fields or {})}
 
     def goto(self, url: str, timeout_ms: int = 30_000) -> None:
         self.page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
@@ -138,9 +168,9 @@ class JobBoardPage:
         """
         raw = self.page.evaluate(
             """
-            (selector) => Array.from(document.querySelectorAll(selector)).map(card => {
-                const pick = (...sels) => {
-                    for (const s of sels) {
+            (args) => Array.from(document.querySelectorAll(args.selector)).map(card => {
+                const pick = (sels) => {
+                    for (const s of (sels || [])) {
                         const el = card.querySelector(s);
                         if (el && el.textContent.trim()) return el.textContent.trim();
                     }
@@ -148,14 +178,14 @@ class JobBoardPage:
                 };
                 const link = card.querySelector('a[href]');
                 return {
-                    title:    pick('[class*="title"]', 'h2', 'h3', 'a'),
-                    company:  pick('[class*="company"]', '[class*="employer"]', 'h4'),
-                    location: pick('[class*="location"]', '[class*="city"]'),
+                    title:    pick(args.fields.title),
+                    company:  pick(args.fields.company),
+                    location: pick(args.fields.location),
                     url:      link ? link.href : ""
                 };
             })
             """,
-            self.card_selector,
+            {"selector": self.card_selector, "fields": self.fields},
         )
         return [
             RawListing(
@@ -177,11 +207,42 @@ class BrowserSource(Source):
         url: str,
         card_selector: str,
         headless: bool = True,
+        storage_state: str | None = None,
+        fields: dict[str, list[str]] | None = None,
     ) -> None:
         self.name = name
         self.url = url
         self.card_selector = card_selector
         self.headless = headless
+        # Optional per-board field selectors; see JobBoardPage.DEFAULT_FIELDS.
+        self.fields = fields
+        # Path to a Playwright storage_state file holding a consent choice a
+        # HUMAN made once, in a real browser. See save_consent_state below.
+        self.storage_state = storage_state
+
+
+    def _consent_state(self) -> str | None:
+        """The saved consent state, or None, saying which and why.
+
+        Never a silent fallback. A board that gates its listings behind a
+        consent dialog renders NOTHING until that dialog is answered, so
+        starting without the state produces a page with no cards and a timeout
+        that looks exactly like "the board restyled its markup" -- which is the
+        wrong diagnosis and cost an afternoon on The Hub (2026-09-21).
+        """
+        if not self.storage_state:
+            return None
+        path = Path(self.storage_state)
+        if path.is_file():
+            log.debug("%s: using saved consent state %s", self.name, path)
+            return str(path)
+        log.warning(
+            "%s: storage_state %s is configured but missing. The board may gate its "
+            "listings behind a consent dialog, in which case this run will find no "
+            "cards. Create it once with: jobwatch consent %s",
+            self.name, path, self.name,
+        )
+        return None
 
     def fetch(self) -> str:
         """Return extracted listings as JSON.
@@ -203,9 +264,11 @@ class BrowserSource(Source):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=self.headless)
             try:
-                context = browser.new_context(user_agent=USER_AGENT)
+                context = browser.new_context(
+                    user_agent=USER_AGENT, storage_state=self._consent_state()
+                )
                 page = context.new_page()
-                board = JobBoardPage(page, self.card_selector)
+                board = JobBoardPage(page, self.card_selector, self.fields)
                 board.goto(self.url)
                 if not board.wait_for_listings():
                     return "[]"
@@ -231,3 +294,56 @@ class BrowserSource(Source):
             for d in data
         ]
         return listings_to_jobs(listings, self.name)
+
+
+def save_consent_state(url: str, out_path: str, timeout_s: int = 300) -> bool:
+    """Open a VISIBLE browser so a person can answer a site's consent dialog,
+    then save the resulting cookies to `out_path` for later headless runs.
+
+    This exists so a scheduled scraper never has to click a consent banner
+    itself. Automating that would mean a robot asserting a legal choice as the
+    user, unattended, twice a day -- in a project whose whole argument is that
+    being able to read a page is not being allowed to. Here the choice is made
+    once, by a human, in a real browser they can see, and the collector merely
+    stops re-litigating it.
+
+    Returns False rather than raising if the window is closed early: a consent
+    state that was never granted must not look like one that was.
+    """
+    from playwright.sync_api import sync_playwright
+
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    print("")
+    print(f"Opening {url}")
+    print("Answer the site's cookie/consent dialog in the window that appears.")
+    print("Prefer the MINIMUM option ('only necessary') unless you want otherwise.")
+    print(f"The page will close by itself once listings appear, or after {timeout_s}s.")
+    print("")
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=False)
+        try:
+            context = browser.new_context(user_agent=USER_AGENT)
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+            deadline = time.time() + timeout_s
+            while time.time() < deadline:
+                page.wait_for_timeout(1000)
+                try:
+                    # Consent answered and listings rendering: good enough to save.
+                    if page.eval_on_selector_all('a[href*="/jobs/"]', "e => e.length") > 0:
+                        break
+                except Exception:
+                    pass
+                if page.is_closed():
+                    print("Window closed before consent was answered. Nothing saved.")
+                    return False
+            context.storage_state(path=str(out))
+        finally:
+            browser.close()
+
+    print(f"Saved consent state to {out}")
+    print("Keep it out of version control: it is a credential-shaped file.")
+    return True
