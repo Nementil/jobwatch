@@ -198,6 +198,15 @@ move. A browser is slow, fragile, and needs a runtime; an endpoint is none of
 those. Most of the work in this project was *finding the endpoint* so a browser
 was not needed.
 
+**And the second point, which took longer to learn:** being *able* to read a
+page is not being *allowed* to. This source was finished and then deliberately
+left switched off, because The Hub's terms did not clearly permit it, and the
+honest options at that point are to ask or to stop. On 2026-09-21 I asked, and
+they said yes. So `config.yaml` now enables it and `config.example.yaml` still
+does not, because the permission was granted to a person rather than to a
+repository and nobody inherits it by cloning. If they change their mind, the
+flag goes back the same day.
+
 ---
 
 ## Why the tests look like that
