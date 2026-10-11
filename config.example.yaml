@@ -342,8 +342,27 @@ sources:
   # Verify a board's terms of service and robots.txt before enabling one of
   # these. Keep rate limits conservative. This is disabled by default so a
   # fresh clone never scrapes anything without a deliberate decision.
+  #
+  # STAYS OFF EVEN THOUGH THE MAINTAINER'S OWN COPY IS ON. The Hub gave ME
+  # written permission on 2026-09-21, in reply to an email asking for it. That
+  # permission is personal: it is not a property of this repository and you do
+  # not inherit it by cloning. If you want this source, ask them yourself. It
+  # took one email and they were friendly about it.
   - name: thehub
     type: browser
     url: https://thehub.io/jobs?search=QA
-    card_selector: '[class*="job-card"], article'
+    # Markup as of 2026-09-21. Re-read it from the live site if this stops
+    # matching: a board restyle is the usual reason a browser source goes quiet.
+    card_selector: '.card-job-find-list'
+    selectors:
+      title:    ['.card-job-find-list__position']
+      company:  ['.bullet-inline-list span:nth-child(1)']
+      location: ['.bullet-inline-list span:nth-child(2)']
+    # The Hub gates its listings behind a Cookie Information consent wall: until
+    # it is answered the page renders no jobs at all, so a run without this finds
+    # nothing and times out looking like a stale selector. Create the file ONCE,
+    # by hand, in a visible browser:   jobwatch consent thehub
+    # A person makes the choice; the collector only stops re-asking. The file
+    # holds cookies, so it is gitignored and should not be shared.
+    storage_state: .jobwatch/thehub-state.json
     enabled: false

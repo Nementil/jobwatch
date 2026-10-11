@@ -49,3 +49,4 @@ def test_source_returns_jobs_from_a_client_rendered_page():
     # canonical_url strips the utm_ and gh_jid parameters the fixture carries.
     assert jobs[0].url == "https://example.dk/jobs/1"
     assert jobs[0].location == "Aarhus"
+
