@@ -116,6 +116,14 @@ ranking:
   #   avoid:
   #     plc: 25
   #     scada: 25
+  # It also works for seniority hidden in the body rather than the title. Use phrasings
+  # that state a MINIMUM: matching is whole-phrase, and a bare "3 years" would also hit
+  # "0-3 years", pushing down exactly the junior adverts you want.
+  #     3+ years: 20
+  #     5+ years: 30
+  #     at least 3 years: 20
+  #     at least five years: 30
+  #     several years: 20
   penalise:
     senior: 10
     lead: 10
