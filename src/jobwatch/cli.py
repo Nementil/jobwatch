@@ -24,7 +24,8 @@ from .config import load as load_config
 from .models import Job
 from .ranking import RankingSettings, rank_jobs
 from .report import render_console, render_markdown
-from .sources import (ArbeitnowSource, AshbySource, BreezySource, BrowserSource, GreenhouseSource, RecruiteeSource,
+from .sources import (ArbeitnowSource, AshbySource, BreezySource, BrowserSource, CustomJSONSource,
+                      GreenhouseSource, PageWatchSource, RecruiteeSource,
                       HimalayasSource, JobBankSource, JobicySource, JobTechSource, LeverSource,
                       RemoteOKSource, RemotiveSource, RSSSource, SmartRecruitersSource,
                       Source, SuccessFactorsSource, WorkableSource, filter_jobs)
@@ -95,6 +96,17 @@ def build_sources(config: dict) -> list[Source]:
                         **extra,
                     )
                 )
+            elif kind == "json":
+                sources.append(CustomJSONSource(
+                    name=entry["name"], url=entry["url"], company=entry.get("company", ""),
+                    **{k: entry[k] for k in ("items", "title_field", "url_template", "page_url",
+                                             "location_field", "description_field") if k in entry},
+                ))
+            elif kind == "pagewatch":
+                sources.append(PageWatchSource(
+                    name=entry["name"], url=entry["url"], company=entry.get("company", ""),
+                    empty_text=entry.get("empty_text", ""),
+                ))
             elif kind in BOARD_TYPES:
                 options = {k: v for k, v in entry.items()
                            if k not in ("name", "type", "query", "enabled")}

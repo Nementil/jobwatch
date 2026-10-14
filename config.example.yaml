@@ -215,6 +215,29 @@ sources:
   #   company: Some Studio
   #   employer_feed: true
   #   enabled: true
+  #
+  # No feed at all? Two fallbacks for a single studio's careers page:
+  # - `json`: the page is a JavaScript app that loads openings from the site's
+  #   own endpoint (find it in the browser's network tab). Name the list's path,
+  #   the title field, and a link template filled from each job's fields.
+  # - `pagewatch`: the page is hand-written and says so when nothing is open.
+  #   It reports ONE entry, pointing at the page, once that sentence is gone.
+  #   Give it `keywords: []`, since the notice is not a job title.
+  # - name: some-studio-json
+  #   type: json
+  #   url: https://www.somestudio.com/api/jobs
+  #   company: Some Studio
+  #   items: data.jobs               # dotted path to the list
+  #   title_field: position
+  #   url_template: "https://www.somestudio.com/jobs/{id}"
+  #   enabled: true
+  # - name: some-studio-page
+  #   type: pagewatch
+  #   url: https://www.somestudio.com/jobs
+  #   company: Some Studio
+  #   empty_text: "There are currently no open positions"
+  #   keywords: []
+  #   enabled: true
 
 
   # --- Malmo, the Swedish side of the Oresund region ----------------------

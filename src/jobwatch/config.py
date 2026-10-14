@@ -84,7 +84,9 @@ def collect_matching(config: dict, sources: Iterable[Source] | None = None,
     filtered by that list instead of the global one: the studio feeds can
     accept Stockholm while the general boards do not. `keywords` and
     `locations` override the config's (the GUI's search boxes); a source's
-    own `locations` still wins over both.
+    own `locations` still wins over both. A source's own `keywords` works the
+    same way (an empty list lets every job through), for sources whose single
+    entry is a notice rather than a job title (`pagewatch`).
     """
     from .cli import build_sources
 
@@ -99,13 +101,17 @@ def collect_matching(config: dict, sources: Iterable[Source] | None = None,
         jobs = source.collect()
         collected += len(jobs)
         own = getattr(source, "locations", None)
-        matched += filter_jobs(jobs, keywords, own if own is not None else default_locations,
+        own_kw = getattr(source, "keywords", None)
+        matched += filter_jobs(jobs, own_kw if own_kw is not None else keywords,
+                               own if own is not None else default_locations,
                                excl_kw, excl_co)
     return matched, collected
 
 
 def attach_locations(source: Source, entry: dict) -> Source:
-    """Copy a config entry's own `locations:` onto the built source."""
+    """Copy a config entry's own `locations:` and `keywords:` onto the built source."""
     if entry.get("locations") is not None:
         source.locations = list(entry["locations"])     # type: ignore[attr-defined]
+    if entry.get("keywords") is not None:
+        source.keywords = list(entry["keywords"])       # type: ignore[attr-defined]
     return source
