@@ -198,10 +198,22 @@ sources:
   #   boards.greenhouse.io/<slug>   ->  type: greenhouse
   #   jobs.lever.co/<slug>          ->  type: lever
   #   <slug>.teamtailor.com         ->  type: rss, url .../jobs.rss
+  #   a Squarespace jobs page       ->  type: rss, url <page>?format=rss
   # - name: some-studio
   #   type: greenhouse
   #   slug: somestudio
   #   company: Some Studio
+  #   enabled: true
+  #
+  # A feed that belongs to one employer can still put a PERSON in its author
+  # field (Squarespace credits each post to whoever wrote it), and jobwatch
+  # would read that name as the company. `employer_feed: true` makes `company`
+  # win for every entry:
+  # - name: some-studio-blog
+  #   type: rss
+  #   url: https://www.somestudio.com/join?format=rss
+  #   company: Some Studio
+  #   employer_feed: true
   #   enabled: true
 
 

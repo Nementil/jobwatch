@@ -67,6 +67,7 @@ def build_sources(config: dict) -> list[Source]:
                         company_in_title=entry.get("company_in_title", False),
                         company_before_colon=entry.get("company_before_colon", False),
                         title_pattern=entry.get("title_pattern", ""),
+                        employer_feed=entry.get("employer_feed", False),
                     )
                 )
             elif kind == "browser":

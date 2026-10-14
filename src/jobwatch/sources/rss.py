@@ -138,6 +138,11 @@ class RSSSource(Source):
 
     company_in_title: set for feeds that append the employer to the title
     (Jobindex does). Off by default because most feeds do not.
+
+    employer_feed: set for a feed that belongs to ONE employer (a studio's own
+    careers page). Every job is then that employer's, whatever the entry's
+    byline says: a Squarespace jobs page credits each post to the staff member
+    who wrote it, so the author field holds a person's name, not the company.
     """
 
     def __init__(
@@ -148,11 +153,13 @@ class RSSSource(Source):
         company_in_title: bool = False,
         company_before_colon: bool = False,
         title_pattern: str = "",
+        employer_feed: bool = False,
     ) -> None:
         self.name = name
         self.url = url
         self.default_company = default_company or name
         self.company_in_title = company_in_title
+        self.employer_feed = employer_feed
         #: We Work Remotely titles read "Company: Job title".
         self.company_before_colon = company_before_colon
         #: A regex with named groups `company`, `title` and optionally
@@ -191,7 +198,9 @@ class RSSSource(Source):
                 company, _, title = title.partition(": ")
             elif self.company_in_title:
                 title, company = split_title_company(title)
-            if not company:
+            if self.employer_feed:
+                company = self.default_company
+            elif not company:
                 company = _entry_company(entry, self.default_company)
 
             try:
