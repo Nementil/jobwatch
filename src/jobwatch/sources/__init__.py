@@ -5,6 +5,7 @@ from .base import Source, filter_jobs
 from .boards import (ArbeitnowSource, HimalayasSource, JobBankSource, JobicySource, JobTechSource,
                      RemoteOKSource, RemotiveSource)
 from .browser import BrowserSource, JobBoardPage, RawListing, listings_to_jobs
+from .custom import CustomJSONSource, PageWatchSource
 from .rss import RSSSource, split_title_company
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "GreenhouseSource", "LeverSource", "AshbySource", "WorkableSource",
     "SmartRecruitersSource", "BreezySource", "RecruiteeSource", "RemotiveSource", "RemoteOKSource", "JobicySource",
     "HimalayasSource", "ArbeitnowSource", "JobTechSource", "JobBankSource", "SuccessFactorsSource",
+    "CustomJSONSource", "PageWatchSource",
 ]

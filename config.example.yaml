@@ -198,10 +198,45 @@ sources:
   #   boards.greenhouse.io/<slug>   ->  type: greenhouse
   #   jobs.lever.co/<slug>          ->  type: lever
   #   <slug>.teamtailor.com         ->  type: rss, url .../jobs.rss
+  #   a Squarespace jobs page       ->  type: rss, url <page>?format=rss
   # - name: some-studio
   #   type: greenhouse
   #   slug: somestudio
   #   company: Some Studio
+  #   enabled: true
+  #
+  # A feed that belongs to one employer can still put a PERSON in its author
+  # field (Squarespace credits each post to whoever wrote it), and jobwatch
+  # would read that name as the company. `employer_feed: true` makes `company`
+  # win for every entry:
+  # - name: some-studio-blog
+  #   type: rss
+  #   url: https://www.somestudio.com/join?format=rss
+  #   company: Some Studio
+  #   employer_feed: true
+  #   enabled: true
+  #
+  # No feed at all? Two fallbacks for a single studio's careers page:
+  # - `json`: the page is a JavaScript app that loads openings from the site's
+  #   own endpoint (find it in the browser's network tab). Name the list's path,
+  #   the title field, and a link template filled from each job's fields.
+  # - `pagewatch`: the page is hand-written and says so when nothing is open.
+  #   It reports ONE entry, pointing at the page, once that sentence is gone.
+  #   Give it `keywords: []`, since the notice is not a job title.
+  # - name: some-studio-json
+  #   type: json
+  #   url: https://www.somestudio.com/api/jobs
+  #   company: Some Studio
+  #   items: data.jobs               # dotted path to the list
+  #   title_field: position
+  #   url_template: "https://www.somestudio.com/jobs/{id}"
+  #   enabled: true
+  # - name: some-studio-page
+  #   type: pagewatch
+  #   url: https://www.somestudio.com/jobs
+  #   company: Some Studio
+  #   empty_text: "There are currently no open positions"
+  #   keywords: []
   #   enabled: true
 
 

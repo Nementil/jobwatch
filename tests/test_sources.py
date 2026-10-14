@@ -177,6 +177,21 @@ class TestSplitTitleCompany:
         assert on.company == "cBrain A/S"            # employer from the title
         assert on.title == "Softwaretester"
 
+    def test_employer_feed_ignores_the_byline(self):
+        # A studio's Squarespace jobs page: the author is the person who posted it.
+        feed = (
+            "<rss version='2.0'><channel><item>"
+            "<title>QA tester (half time)</title>"
+            "<link>https://x.com/1</link><author>Toke Barter</author>"
+            "</item></channel></rss>"
+        )
+        off = RSSSource("s", "https://x.invalid", default_company="Fable Systems").parse(feed)[0]
+        on = RSSSource("s", "https://x.invalid", default_company="Fable Systems",
+                       employer_feed=True).parse(feed)[0]
+        assert off.company == "Toke Barter"          # byline read as the employer
+        assert on.company == "Fable Systems"
+        assert on.title == "QA tester (half time)"
+
 
 class TestFilterJobs:
     def test_keyword_filter(self, jobs):
