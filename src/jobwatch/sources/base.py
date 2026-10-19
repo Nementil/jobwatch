@@ -13,7 +13,10 @@ changed its markup; the parsing logic they guard is covered offline.
 
 from __future__ import annotations
 
+import http.client
 import logging
+import time
+import urllib.error
 from abc import ABC, abstractmethod
 from typing import Sequence
 
@@ -30,12 +33,28 @@ USER_AGENT = (
 )
 
 
+def is_transient(exc: BaseException) -> bool:
+    """True for a failure worth one more attempt: the network, not the request.
+
+    A dropped connection, a timeout or a truncated body ("IncompleteRead") on a
+    slow line says nothing about the source, and the next attempt usually
+    succeeds. A 404 or 403 will fail the same way again, so only rate limiting
+    and server errors count among HTTP statuses.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code == 429 or exc.code >= 500
+    return isinstance(exc, (urllib.error.URLError, http.client.IncompleteRead,
+                            TimeoutError, ConnectionError))
+
+
 class Source(ABC):
     """A place jobs come from."""
 
     name: str = "unnamed"
     #: Seconds to wait between requests. Never set this to 0.
     rate_limit_seconds: float = 2.0
+    #: Pause before the single retry after a transient network failure.
+    retry_delay_seconds: float = 5.0
 
     @abstractmethod
     def fetch(self) -> str:
@@ -51,12 +70,25 @@ class Source(ABC):
         A source that raises must not take the whole run down with it. One
         board changing its markup should cost you that board's listings for
         one run, not the other five boards and the report.
+
+        A transient network failure gets one retry after a short pause: on a
+        slow connection a large response can be cut off mid-download, and the
+        second attempt nearly always succeeds. Anything else fails at once.
         """
         try:
             payload = self.fetch()
-        except Exception:
-            log.exception("%s: fetch failed", self.name)
-            return []
+        except Exception as exc:
+            if not is_transient(exc):
+                log.exception("%s: fetch failed", self.name)
+                return []
+            log.warning("%s: %s; retrying once in %.0fs", self.name,
+                        type(exc).__name__, self.retry_delay_seconds)
+            time.sleep(self.retry_delay_seconds)
+            try:
+                payload = self.fetch()
+            except Exception:
+                log.exception("%s: fetch failed after a retry", self.name)
+                return []
         try:
             jobs = self.parse(payload)
         except Exception:

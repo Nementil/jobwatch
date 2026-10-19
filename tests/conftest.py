@@ -17,6 +17,15 @@ from jobwatch.store import JobStore
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def no_retry_pause(monkeypatch):
+    """A simulated network failure is retried once; the real 5 s pause would
+    only make the offline suite slow, never more correct."""
+    from jobwatch.sources.base import Source
+
+    monkeypatch.setattr(Source, "retry_delay_seconds", 0.0)
+
+
 @pytest.fixture
 def store() -> JobStore:
     """An isolated in-memory store. No filesystem side effects, no cleanup."""
